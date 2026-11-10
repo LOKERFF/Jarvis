@@ -9,6 +9,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 // ---------------------------------------------------------------------------
@@ -51,6 +53,10 @@ data class ChatMessageEntity(
     val timestamp: Long,
     val role: String,
     val text: String,
+    // ---- added in database version 2 (self setup module) ----
+    val artifactName: String? = null,
+    val artifactPath: String? = null,
+    val artifactMime: String? = null,
 )
 
 @Dao
@@ -70,8 +76,16 @@ interface ChatDao {
 }
 
 @Database(
-    entities = [AuditLogEntity::class, ChatMessageEntity::class],
-    version = 1,
+    entities = [
+        AuditLogEntity::class,
+        ChatMessageEntity::class,
+        SavedSetupEntity::class,
+        SetupStepEntity::class,
+        LearningNoteEntity::class,
+        CommandLogEntity::class,
+        ArtifactEntity::class,
+    ],
+    version = 2,
     exportSchema = false
 )
 abstract class JarvisDatabase : RoomDatabase() {
@@ -80,9 +94,97 @@ abstract class JarvisDatabase : RoomDatabase() {
 
     abstract fun chatDao(): ChatDao
 
+    abstract fun setupDao(): SetupDao
+
+    abstract fun setupStepDao(): SetupStepDao
+
+    abstract fun learningNoteDao(): LearningNoteDao
+
+    abstract fun commandLogDao(): CommandLogDao
+
+    abstract fun artifactDao(): ArtifactDao
+
     companion object {
         @Volatile
         private var instance: JarvisDatabase? = null
+
+        /**
+         * v1 -> v2: adds the self-setup / learning module.
+         * Nothing from Phase 1 is dropped: chat rows are kept and only gain
+         * three nullable artifact columns.
+         */
+        val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. chat messages gain an optional artifact
+                db.execSQL("ALTER TABLE `chat_messages` ADD COLUMN `artifactName` TEXT")
+                db.execSQL("ALTER TABLE `chat_messages` ADD COLUMN `artifactPath` TEXT")
+                db.execSQL("ALTER TABLE `chat_messages` ADD COLUMN `artifactMime` TEXT")
+
+                // 2. saved setups
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `saved_setups` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, " +
+                        "`sourceName` TEXT NOT NULL, " +
+                        "`sourceKind` TEXT NOT NULL, " +
+                        "`workspacePath` TEXT NOT NULL, " +
+                        "`status` TEXT NOT NULL, " +
+                        "`summary` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL)"
+                )
+
+                // 3. setup steps
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `setup_steps` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`setupId` INTEGER NOT NULL, " +
+                        "`stepIndex` INTEGER NOT NULL, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`kind` TEXT NOT NULL, " +
+                        "`command` TEXT NOT NULL, " +
+                        "`path` TEXT NOT NULL, " +
+                        "`status` TEXT NOT NULL, " +
+                        "`output` TEXT NOT NULL, " +
+                        "`exitCode` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL)"
+                )
+
+                // 4. encrypted learning notes
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `learning_notes` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`mistakeEnc` TEXT NOT NULL, " +
+                        "`correctEnc` TEXT NOT NULL, " +
+                        "`hint` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "`active` INTEGER NOT NULL)"
+                )
+
+                // 5. command log
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `command_logs` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`timestamp` INTEGER NOT NULL, " +
+                        "`setupId` INTEGER NOT NULL, " +
+                        "`command` TEXT NOT NULL, " +
+                        "`outcome` TEXT NOT NULL, " +
+                        "`exitCode` INTEGER NOT NULL)"
+                )
+
+                // 6. artifacts (generated files / videos)
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `artifacts` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, " +
+                        "`path` TEXT NOT NULL, " +
+                        "`mime` TEXT NOT NULL, " +
+                        "`size` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL)"
+                )
+            }
+        }
 
         fun get(context: Context): JarvisDatabase {
             return instance ?: synchronized(this) {
@@ -91,6 +193,7 @@ abstract class JarvisDatabase : RoomDatabase() {
                     JarvisDatabase::class.java,
                     "jarvis.db"
                 )
+                    .addMigrations(MIGRATION_1_2)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { instance = it }
