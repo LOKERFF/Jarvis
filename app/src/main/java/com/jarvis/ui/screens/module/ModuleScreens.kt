@@ -291,6 +291,8 @@ fun MemoryScreen(
     vm: MemoryViewModel = viewModel(),
 ) {
     val notes by vm.notes.collectAsStateWithLifecycle()
+    val allNotes by vm.allNotes.collectAsStateWithLifecycle()
+    val search by vm.searchQuery.collectAsStateWithLifecycle()
     val ui = vm.ui
     var editingId by remember { mutableStateOf<Long?>(null) }
     var editMistake by remember { mutableStateOf("") }
@@ -299,7 +301,11 @@ fun MemoryScreen(
 
     SettingsPage(
         title = "Memory",
-        subtitle = "${notes.size} learned corrections",
+        subtitle = if (search.isBlank()) {
+            "${allNotes.size} learned corrections · encrypted"
+        } else {
+            "${notes.size} of ${allNotes.size} notes match"
+        },
         onBack = onBack,
     ) {
         SettingsHint(
@@ -307,6 +313,41 @@ fun MemoryScreen(
                 "permanent hain aur har naye jawab se pehle prompt me jaate hain, isliye " +
                 "Jarvis wahi galti dobara nahi karta. Chat me \"ye galat hai\" bolne se note " +
                 "apne aap banta hai."
+        )
+
+        OutlinedTextField(
+            value = search,
+            onValueChange = { vm.setQuery(it) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            placeholder = {
+                Text(text = "Search: galti, sahi behaviour ya note #id", color = TextMuted, fontSize = 13.sp)
+            },
+            leadingIcon = {
+                Text(text = "🔍", fontSize = 14.sp)
+            },
+            trailingIcon = {
+                if (search.isNotBlank()) {
+                    Text(
+                        text = "Clear",
+                        color = LocalAccent.current,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .clickable { vm.setQuery("") }
+                            .padding(horizontal = 10.dp),
+                    )
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = LocalAccent.current.copy(alpha = 0.7f),
+                unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
+                focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                unfocusedContainerColor = Color.White.copy(alpha = 0.03f),
+                cursorColor = LocalAccent.current,
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary,
+            ),
         )
 
         if (ui.error != null) {
@@ -333,11 +374,16 @@ fun MemoryScreen(
 
         if (notes.isEmpty()) {
             GlassCard {
-                SectionLabel("Koi note nahi")
+                SectionLabel(if (search.isBlank()) "Koi note nahi" else "Kuch nahi mila")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Chat me kuch galat hone par \"ye galat hai\" likho. Main poochhunga " +
-                        "kya sahi hai, phir note permanently yaad rakh lunga.",
+                    text = if (search.isBlank()) {
+                        "Chat me kuch galat hone par \"ye galat hai\" likho. Main poochhunga " +
+                            "kya sahi hai, phir note permanently yaad rakh lunga."
+                    } else {
+                        "\"$search\" se koi note match nahi hua. Doosra shabd try karo ya " +
+                            "search clear karo."
+                    },
                     color = TextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 19.sp,
