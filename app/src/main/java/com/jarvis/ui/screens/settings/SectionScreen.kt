@@ -8,6 +8,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarvis.ui.nav.SettingsSection
+import com.jarvis.ui.screens.module.MemoryScreen
+import com.jarvis.ui.screens.module.ModuleOverviewScreen
+import com.jarvis.ui.screens.module.SavedSetupsScreen
+import com.jarvis.ui.screens.module.TerminalScreen
 import com.jarvis.ui.theme.GlassCard
 import com.jarvis.ui.theme.SectionLabel
 import com.jarvis.ui.theme.StatusChip
@@ -24,6 +28,7 @@ fun SettingsSectionScreen(
     section: SettingsSection,
     onBack: () -> Unit,
     onRestartSetup: () -> Unit,
+    onOpenSection: (SettingsSection) -> Unit = {},
 ) {
     when (section) {
         SettingsSection.GENERAL -> GeneralScreen(onBack, onRestartSetup)
@@ -38,6 +43,10 @@ fun SettingsSectionScreen(
         SettingsSection.LOGS -> LogsScreen(onBack)
         SettingsSection.DEVELOPER -> DeveloperScreen(onBack, onRestartSetup)
         SettingsSection.ABOUT -> AboutScreen(onBack)
+        SettingsSection.MODULE -> ModuleOverviewScreen(onBack = onBack, onOpenSection = onOpenSection)
+        SettingsSection.SAVED_SETUPS -> SavedSetupsScreen(onBack = onBack)
+        SettingsSection.MEMORY -> MemoryScreen(onBack = onBack)
+        SettingsSection.TERMINAL -> TerminalScreen(onBack = onBack)
         else -> ComingSoonScreen(section, onBack)
     }
 }

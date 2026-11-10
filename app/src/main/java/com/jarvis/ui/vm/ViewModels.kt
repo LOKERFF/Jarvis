@@ -1,6 +1,7 @@
 package com.jarvis.ui.vm
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -10,14 +11,22 @@ import com.jarvis.auth.GoogleAccount
 import com.jarvis.core.ServiceLocator
 import com.jarvis.core.security.SecureStore
 import com.jarvis.data.db.AuditLogEntity
+import com.jarvis.data.db.CommandLogEntity
+import com.jarvis.data.db.SavedSetupEntity
+import com.jarvis.data.db.SetupStepEntity
+import com.jarvis.core.terminal.CommandGuard
 import com.jarvis.domain.JarvisUiState
+import com.jarvis.domain.learning.LearningRepository
+import com.jarvis.domain.setup.SetupUiState
 import com.jarvis.domain.orb.OrbSpec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * Thin MVVM layer. The single source of truth for conversation + voice is the
@@ -46,6 +55,7 @@ class ChatViewModel : ViewModel() {
     val orbSpec: StateFlow<OrbSpec> = engine.orbSpec
     val continuousMode: StateFlow<Boolean> = prefs.continuousMode
     val selectedModel: StateFlow<String> = prefs.selectedModel
+    val setupState: StateFlow<SetupUiState> = engine.setupState
 
     /** Called when the home screen appears: re-arms the wake word. */
     fun onScreenVisible() = engine.onForeground()
@@ -67,6 +77,20 @@ class ChatViewModel : ViewModel() {
     fun dismissError() = engine.dismissError()
 
     fun toggleContinuous(enabled: Boolean) = prefs.setContinuousMode(enabled)
+
+    // ------------------------------------------------------ module actions
+
+    fun attach(uri: Uri) = engine.attachFile(uri)
+
+    fun clearAttachment() = engine.clearAttachment()
+
+    fun confirmSetup(approved: Boolean) = engine.confirmSetup(approved)
+
+    fun cancelSetup() = engine.cancelSetup()
+
+    fun dismissSetupReport() = engine.dismissSetupReport()
+
+    fun reportError(message: String) = engine.reportError(message)
 
     override fun onCleared() {
         // The engine is app-scoped on purpose: closing the screen must not stop
@@ -313,5 +337,201 @@ class OrbViewModel : ViewModel() {
     fun reset() {
         prefs.setOrbSpec(OrbSpec.DEFAULT)
         audit.info("ORB", "orb reset to default")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Module: Saved Setups
+// ---------------------------------------------------------------------------
+data class SetupDetail(
+    val setup: SavedSetupEntity,
+    val steps: List<SetupStepEntity>,
+)
+
+class SavedSetupsViewModel : ViewModel() {
+
+    private val setupDao = ServiceLocator.database.setupDao()
+    private val stepDao = ServiceLocator.database.setupStepDao()
+
+    val setups: StateFlow<List<SavedSetupEntity>> = setupDao.all()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    var detail by mutableStateOf<SetupDetail?>(null)
+        private set
+
+    fun open(id: Long) {
+        viewModelScope.launch {
+            val setup = setupDao.byId(id) ?: return@launch
+            val steps = stepDao.forSetupOnce(id)
+            detail = SetupDetail(setup, steps)
+        }
+    }
+
+    fun closeDetail() {
+        detail = null
+    }
+
+    fun delete(id: Long) {
+        viewModelScope.launch {
+            stepDao.deleteForSetup(id)
+            setupDao.delete(id)
+            if (detail?.setup?.id == id) detail = null
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Module: Memory (learned corrections)
+// ---------------------------------------------------------------------------
+class MemoryViewModel : ViewModel() {
+
+    private val repo: LearningRepository = ServiceLocator.learning
+
+    val notes: StateFlow<List<LearningRepository.Note>> = repo.notes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    var ui by mutableStateOf(AsyncUi())
+        private set
+
+    fun save(id: Long, mistake: String, correct: String, onDone: () -> Unit = {}) {
+        if (correct.isBlank()) {
+            ui = AsyncUi(error = "Sahi behaviour likhna zaroori hai.")
+            return
+        }
+        viewModelScope.launch {
+            val ok = repo.update(id, mistake, correct)
+            ui = if (ok) {
+                AsyncUi(message = "Note update ho gaya.")
+            } else {
+                AsyncUi(error = "Note update nahi ho paya.")
+            }
+            if (ok) onDone()
+        }
+    }
+
+    fun delete(id: Long) {
+        viewModelScope.launch {
+            repo.delete(id)
+            ui = AsyncUi(message = "Note delete ho gaya.")
+        }
+    }
+
+    fun dismissUi() {
+        ui = AsyncUi()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Module: in-app terminal
+// ---------------------------------------------------------------------------
+data class PendingCommand(
+    val command: String,
+    val reasons: List<String>,
+)
+
+class TerminalViewModel : ViewModel() {
+
+    private val shell = ServiceLocator.shell
+    private val logDao = ServiceLocator.database.commandLogDao()
+    private val audit = ServiceLocator.audit
+
+    val workDir: File = File(ServiceLocator.appContext.filesDir, "workspace/terminal")
+        .apply { mkdirs() }
+
+    private val _output = MutableStateFlow("")
+    val output: StateFlow<String> = _output
+
+    var running by mutableStateOf(false)
+        private set
+
+    var pending by mutableStateOf<PendingCommand?>(null)
+        private set
+
+    var error by mutableStateOf<String?>(null)
+        private set
+
+    val log: StateFlow<List<CommandLogEntity>> = logDao.recent(200)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun submit(raw: String) {
+        val command = raw.trim()
+        if (command.isEmpty() || running) return
+
+        CommandGuard.isBlocked(command)?.let { reason ->
+            error = reason
+            return
+        }
+        val verdict = CommandGuard.inspect(command)
+        if (verdict.dangerous) {
+            pending = PendingCommand(command, verdict.reasons)
+            return
+        }
+        execute(command)
+    }
+
+    fun confirm(approved: Boolean) {
+        val command = pending?.command
+        pending = null
+        if (approved && command != null) {
+            execute(command)
+        } else if (command != null) {
+            appendLine("\n\$ $command  [cancelled]")
+        }
+    }
+
+    fun cancelPending() {
+        pending = null
+    }
+
+    fun cancelRunning() {
+        shell.cancelAll()
+        appendLine("\n[stopped by user]")
+        running = false
+    }
+
+    fun clearOutput() {
+        _output.value = ""
+    }
+
+    fun clearLog() {
+        viewModelScope.launch { logDao.clearAll() }
+    }
+
+    fun dismissError() {
+        error = null
+    }
+
+    private fun execute(command: String) {
+        running = true
+        error = null
+        appendLine("\n\$ $command")
+        viewModelScope.launch {
+            val outcome = shell.run(
+                command = command,
+                workDir = workDir,
+                onOutput = { chunk -> append(chunk) },
+            )
+            val stamp = if (outcome.ok) "ok" else "exit ${outcome.exitCode}"
+            appendLine("\n[${stamp} · ${outcome.durationMs} ms]")
+            running = false
+            logDao.insert(
+                CommandLogEntity(
+                    timestamp = System.currentTimeMillis(),
+                    setupId = 0L,
+                    command = command,
+                    outcome = if (outcome.ok) "ok" else if (outcome.timedOut) "timeout" else "failed",
+                    exitCode = outcome.exitCode,
+                )
+            )
+            audit.info("TERMINAL", "$command → ${outcome.exitCode}")
+        }
+    }
+
+    private fun append(chunk: String) {
+        _output.update { current -> (current + chunk).takeLast(40_000) }
+    }
+
+    private fun appendLine(line: String) {
+        append("$line\n")
     }
 }

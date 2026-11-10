@@ -254,3 +254,120 @@ app/src/main/java/com/jarvis/
 
 Phase 1 पूरा हो गया। अगला कदम: **Phase 2** (foreground service, offline Vosk wake
 word, terminal) — तैयार हों तो "next" लिखें।
+
+---
+
+# Add-on: Self Setup and Learning Module
+
+A self-contained module added on top of Phase 1. It does **not** modify the voice
+pipeline, the orb, sign-in or the settings that already worked; everything below
+is additive (new tables, new screens, new tools).
+
+## A.1 What it does
+
+1. **Attach → self setup** — the 📎 button in chat opens the system file picker
+   (Storage Access Framework, so no storage permission is requested). Say
+   "setup kar lo" and Jarvis:
+   - copies the upload into `files/uploads`, extracts zips safely (zip-slip
+     guarded, 3000 entries / 200 MB cap) or reads a text/config file,
+   - asks Gemini **only for a plan** (folder creation, extraction, config
+     writes, dependency checks, API-key placeholders),
+   - validates that plan locally (`SetupPlan` validator: relative paths only,
+     ≤ 40 steps, dangerous step kinds refused),
+   - executes every step through the in-app shell, verifies the real result,
+     retries once with a fix, and explains the exact error in simple Hindi,
+   - persists the job and every step in Room under **Saved Setups**.
+2. **In-app terminal** — `/system/bin/sh -c` inside `files/workspace`, streaming
+   output, 60 s timeout, 200k char cap, duplicate-command rejection, a 6-minute
+   total setup deadline, Emergency Stop kills the process. Dangerous commands
+   are shown with the reason and need "Haan, chalao". Every command is logged
+   with a timestamp, exit code and outcome (`command_logs`).
+3. **Learning from mistakes** — say "ye galat hai" (or "ise aise sudharo") in
+   chat. Jarvis asks one short question, then stores the mistake + correct
+   behaviour **AES-256-GCM encrypted** (Keystore key `jarvis_learning_key_v1`).
+   Notes are permanent and are injected into every future prompt and every setup
+   plan. Settings › Memory supports search-by-eye list, edit and delete.
+   Confirmation: *"Yaad rakh liya, aage se ye nahi karunga."*
+4. **Chat artifacts** — `create_file` writes a real file (`txt.txt`,
+   `index.html`, …) into `files/artifacts`, registers it in Room and shows a card
+   in the chat bubble (open / share through the app's FileProvider).
+   `make_video` renders a real MP4 (MediaCodec AVC + MediaMuxer, 480×854,
+   text cards) that plays **inside the chat** with Media3 ExoPlayer.
+
+## A.2 New / changed files
+
+| Path | Status |
+|---|---|
+| `core/security/CryptoBox.kt` | new |
+| `core/terminal/CommandGuard.kt` | new |
+| `core/terminal/ShellRunner.kt` | new |
+| `core/media/LocalVideoMaker.kt` | new |
+| `core/ArtifactIntents.kt` | new |
+| `data/db/AddOnEntities.kt` | new (5 tables + DAOs) |
+| `domain/setup/FileIntake.kt`, `SetupPlan.kt`, `SetupPlanner.kt`, `SelfSetupEngine.kt` | new |
+| `domain/learning/LearningRepository.kt` | new |
+| `domain/artifacts/ArtifactRepository.kt` | new |
+| `ui/components/Artifacts.kt` | new (artifact card + in-chat player) |
+| `ui/screens/setup/SetupProgressSheet.kt` | new |
+| `ui/screens/module/ModuleScreens.kt`, `ModuleOverviewScreen.kt` | new |
+| `res/xml/file_paths.xml` | new |
+| `data/db/JarvisDatabase.kt` | v1 → v2 + `MIGRATION_1_2` |
+| `domain/model/ChatMessage.kt` | + `ChatArtifact`, artifact columns |
+| `domain/JarvisEngine.kt` | + attach / setup / learning routing, 2 new tools |
+| `domain/tools/JarvisTools.kt` | + `create_file`, `make_video` |
+| `domain/Prompts.kt` | + saved corrections + file/video rules |
+| `core/ServiceLocator.kt` | + module singletons |
+| `ui/screens/HomeScreen.kt` | + attach button, chip, setup sheet, artifact actions |
+| `ui/vm/ViewModels.kt` | + setup/memory/terminal/saved-setups view models |
+| `ui/nav/SettingsSections.kt`, `ui/nav/JarvisNav.kt`, `ui/screens/settings/SectionScreen.kt`, `SettingsHubScreen.kt` | + module sections |
+| `AndroidManifest.xml` | + FileProvider |
+| `gradle/libs.versions.toml`, `app/build.gradle.kts` | + Media3 1.4.1 |
+| `README.md` | this section |
+
+## A.3 Database v2
+
+`saved_setups`, `setup_steps`, `learning_notes` (encrypted columns),
+`command_logs`, `artifacts`, plus nullable `artifactName/artifactPath/
+artifactMime` on `chat_messages`. The migration is additive only; Phase 1 rows
+are untouched.
+
+## A.4 Honest limits (Android reality)
+
+- The shell is **not** a system shell. Without root, an app can only run
+  `/system/bin/sh` inside its own sandbox (a toybox subset). `apt`, `sudo`,
+  system-wide installs and writes outside the app folder are impossible; Jarvis
+  reports the real failure instead of faking success.
+- "Install dependencies" therefore means: download-free checks inside the
+  sandbox, creating folders/config files, and writing a `SETUP_NOTES.md` with
+  the exact manual steps when something needs a real installer.
+- Videos are generated locally from text cards; no stock footage is downloaded.
+  If the device has no H.264 encoder the tool returns an honest Hindi error.
+- Nothing here reads SMS, OTPs, passwords or call logs; redaction still runs
+  before every AI call.
+
+## A.5 Build
+
+```bash
+./gradlew clean assembleDebug
+# APK: app/build/outputs/apk/debug/app-debug.apk
+```
+
+## A.6 Test checklist (module)
+
+1. Install, finish onboarding, open chat.
+2. 📎 → pick any zip → chip shows the file name → type "setup kar lo".
+3. The setup sheet opens: plan steps appear, each turns green only after
+   verification, live output streams, dangerous steps ask "Haan, chalao".
+4. Settings › Saved Setups shows the job with every step, output and exit code.
+5. Type "ye galat hai" → answer the question → read "Yaad rakh liya, aage se ye
+   nahi karunga." → Settings › Memory shows the encrypted note → edit it, then
+   delete a second one.
+6. Force-stop the app, reopen: Saved Setups and Memory are still there, and a new
+   question shows the correction is applied (ask the same thing again).
+7. Ask "index.html banao jisme hello likha ho" → card appears in chat → Kholo /
+   Share work.
+8. Ask "5 second ka video banao" → MP4 card appears → play it inside the chat.
+9. Settings › Terminal → `echo hello` → live output + log entry; try
+   `rm -rf /data` → blocked; try `ls && echo hi` → confirmation dialog.
+10. Emergency STOP while a setup runs: command dies, setup is marked cancelled,
+    nothing claims success.

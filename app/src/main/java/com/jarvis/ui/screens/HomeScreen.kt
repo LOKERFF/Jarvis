@@ -26,6 +26,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -45,12 +49,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jarvis.core.ArtifactIntents
 import com.jarvis.core.EmergencyStop
 import com.jarvis.core.ServiceLocator
 import com.jarvis.data.prefs.AppPreferences
@@ -60,6 +66,7 @@ import com.jarvis.ui.components.ChatBubble
 import com.jarvis.ui.components.ErrorBanner
 import com.jarvis.ui.components.JarvisOrb
 import com.jarvis.ui.components.MicLevelBars
+import com.jarvis.ui.screens.setup.SetupProgressSheet
 import com.jarvis.ui.theme.DangerRed
 import com.jarvis.ui.theme.LocalAccent
 import com.jarvis.ui.theme.NeonPurple
@@ -83,6 +90,7 @@ fun HomeScreen(
     val continuous by vm.continuousMode.collectAsStateWithLifecycle()
     val model by vm.selectedModel.collectAsStateWithLifecycle()
 
+    val setup by vm.setupState.collectAsStateWithLifecycle()
     val emergency by EmergencyStop.active.collectAsStateWithLifecycle()
     val limited by ServiceLocator.prefs.limitedMode.collectAsStateWithLifecycle()
     val integrity by ServiceLocator.prefs.integrityStatus.collectAsStateWithLifecycle()
@@ -90,6 +98,23 @@ fun HomeScreen(
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val accent = LocalAccent.current
+    val context = LocalContext.current
+
+    // Module: attach any file. SAF gives us a read handle, so no storage
+    // permission is ever requested.
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            vm.attach(uri)
+        }
+    }
 
     LaunchedEffect(Unit) {
         vm.onScreenVisible()
@@ -217,7 +242,22 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         items(state.messages.asReversed(), key = { it.id }) { message ->
-                            ChatBubble(message = message)
+                            ChatBubble(
+                                message = message,
+                                onOpenArtifact = { artifact ->
+                                    val ok = ArtifactIntents.open(context, artifact.path, artifact.mime)
+                                    if (!ok) {
+                                        vm.reportError(
+                                            "Is file ko kholne wala koi app nahi mila. " +
+                                                "Share se doosri app me bhej do."
+                                        )
+                                    }
+                                },
+                                onShareArtifact = { artifact ->
+                                    val ok = ArtifactIntents.share(context, artifact.path, artifact.mime)
+                                    if (!ok) vm.reportError("File share nahi ho payi.")
+                                },
+                            )
                         }
                     }
                 }
@@ -253,12 +293,57 @@ fun HomeScreen(
                     ErrorBanner(message = state.error ?: "", onDismiss = { vm.dismissError() })
                 }
 
+                state.attachment?.let { attachment ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(accent.copy(alpha = 0.12f))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "📎 ${attachment.name} · ${attachment.kind}",
+                            color = accent,
+                            fontSize = 12.sp,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = "setup kar lo",
+                            color = TextMuted,
+                            fontSize = 10.sp,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Remove attachment",
+                            tint = TextMuted,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clickable { vm.clearAttachment() },
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    IconButton(
+                        onClick = { filePicker.launch(arrayOf("*/*")) },
+                        enabled = !state.busy,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.AttachFile,
+                            contentDescription = "Attach a file",
+                            tint = if (state.attachment != null) accent else TextMuted,
+                        )
+                    }
+
                     OutlinedTextField(
                         value = input,
                         onValueChange = { input = it },
@@ -318,5 +403,12 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(10.dp))
             }
         }
+
+        SetupProgressSheet(
+            state = setup,
+            onConfirm = { approved -> vm.confirmSetup(approved) },
+            onCancel = { vm.cancelSetup() },
+            onDismiss = { vm.dismissSetupReport() },
+        )
     }
 }

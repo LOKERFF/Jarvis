@@ -101,6 +101,7 @@ fun JarvisNavHost(navController: NavHostController = rememberNavController()) {
                     section = section,
                     onBack = { navController.popBackStack() },
                     onRestartSetup = { resetTo(Routes.SPLASH) },
+                    onOpenSection = { target -> navController.navigate(Routes.section(target.id)) },
                 )
             }
         }

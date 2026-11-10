@@ -53,7 +53,7 @@ fun SettingsHubScreen(
         ) {
             JarvisTopBar(
                 title = "Settings",
-                subtitle = "27 sections · Phase 1 items are live",
+                subtitle = "${SettingsSection.entries.size} sections · Phase 1 + module live",
                 onBack = onBack,
             )
 

@@ -29,6 +29,17 @@ enum class SettingsSection(
     VOICE(
         "voice", "Voice", "Speech output, rate, wake word toggles", 1, true, "VO"
     ),
+    MODULE(
+        "module",
+        "Self Setup & Learning",
+        "Attach a file, let Jarvis set it up, teach it your corrections",
+        1,
+        true,
+        "SS",
+    ),
+    SAVED_SETUPS(
+        "saved_setups", "Saved Setups", "Every setup, step, command and result", 1, true, "ST"
+    ),
     WAKE_WORD(
         "wake_word", "Wake Word", "Offline Vosk engine and sensitivity", 2, false, "WW"
     ),
@@ -54,7 +65,7 @@ enum class SettingsSection(
         "security", "Security", "Integrity result and key vault status", 1, true, "SE"
     ),
     MEMORY(
-        "memory", "Memory", "Long-term facts and incognito mode", 5, false, "ME"
+        "memory", "Memory", "Learned corrections, encrypted and permanent", 1, true, "ME"
     ),
     AUTOMATION(
         "automation", "Automation", "Triggers, actions, schedules", 5, false, "AU"
@@ -66,7 +77,7 @@ enum class SettingsSection(
         "coding", "Coding", "Build-fix loops in app storage", 4, false, "CO"
     ),
     TERMINAL(
-        "terminal", "Terminal", "Local shell sessions and history", 2, false, "TM"
+        "terminal", "Terminal", "In-app sandbox shell with live output", 1, true, "TM"
     ),
     NOTIFICATIONS(
         "notifications", "Notifications", "Persistent controls and summaries", 2, false, "NO"

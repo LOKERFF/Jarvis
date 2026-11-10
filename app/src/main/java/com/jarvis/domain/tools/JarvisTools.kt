@@ -4,6 +4,7 @@ import com.jarvis.data.remote.gemini.FunctionDeclaration
 import com.jarvis.data.remote.gemini.Tool
 import com.jarvis.domain.orb.MiniExpr
 import com.jarvis.domain.orb.OrbSpec
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -24,6 +25,12 @@ interface ToolHost {
     fun currentModel(): String
 
     fun applyModel(requested: String): Pair<Boolean, String>
+
+    /** Writes a real file on the phone and shows it in chat. */
+    suspend fun generateFile(name: String, content: String): Pair<Boolean, String>
+
+    /** Renders a real MP4 on the phone and shows it in chat. */
+    suspend fun generateVideo(title: String, lines: List<String>, seconds: Int): Pair<Boolean, String>
 }
 
 /**
@@ -95,14 +102,68 @@ class JarvisTools(private val host: ToolHost) {
                         put("required", buildJsonArray { add("model") })
                     },
                 ),
+                FunctionDeclaration(
+                    name = "create_file",
+                    description = "Create a real file on the user's phone and show it in the chat. " +
+                        "Use this whenever the user asks for a file: \"txt.txt bhejo\", " +
+                        "\"index.html likho\", \"code file bana do\". Always send the complete " +
+                        "file content, never a summary.",
+                    parameters = buildJsonObject {
+                        put("type", "object")
+                        putJsonObject("properties") {
+                            putJsonObject("name") {
+                                put("type", "string")
+                                put("description", "File name with extension, e.g. index.html or notes.txt")
+                            }
+                            putJsonObject("content") {
+                                put("type", "string")
+                                put("description", "Full file content. No placeholders.")
+                            }
+                        }
+                        put("required", buildJsonArray {
+                            add("name")
+                            add("content")
+                        })
+                    },
+                ),
+                FunctionDeclaration(
+                    name = "make_video",
+                    description = "Render a real MP4 video on the phone and show it in the chat " +
+                        "with a player. Use when the user asks for a video. Only text cards are " +
+                        "rendered locally - no footage, no download.",
+                    parameters = buildJsonObject {
+                        put("type", "object")
+                        putJsonObject("properties") {
+                            putJsonObject("title") {
+                                put("type", "string")
+                                put("description", "Video title card text")
+                            }
+                            putJsonObject("lines") {
+                                put("type", "array")
+                                put("description", "3 to 8 short lines shown one by one")
+                                putJsonObject("items") { put("type", "string") }
+                            }
+                            putJsonObject("seconds") {
+                                put("type", "integer")
+                                put("description", "Length in seconds, 2 to 15 (default 6)")
+                            }
+                        }
+                        put("required", buildJsonArray {
+                            add("title")
+                            add("lines")
+                        })
+                    },
+                ),
             )
         )
     )
 
-    fun execute(name: String, args: JsonObject): JsonObject {
+    suspend fun execute(name: String, args: JsonObject): JsonObject {
         return when (name) {
             "set_orb" -> setOrb(args)
             "set_model" -> setModel(args)
+            "create_file" -> createFile(args)
+            "make_video" -> makeVideo(args)
             else -> error("Unknown tool \"$name\". Available tools: set_orb, set_model.")
         }
     }
@@ -185,6 +246,40 @@ class JarvisTools(private val host: ToolHost) {
         }
     }
 
+    private suspend fun createFile(args: JsonObject): JsonObject {
+        val name = args.string("name") ?: return error("Missing argument \"name\".")
+        val content = args.string("content").orEmpty()
+        if (name.contains('/') || name.contains('\\')) {
+            return error("File name me / ya \\ nahi ho sakta. Sirf naam bhejo, jaise index.html")
+        }
+        if (content.isBlank()) return error("File content khali hai.")
+        if (content.length > 120_000) return error("File content bahut bada hai (limit 120k characters).")
+
+        val (ok, message) = host.generateFile(name, content)
+        if (!ok) return error(message)
+        return buildJsonObject {
+            put("status", "ok")
+            put("message", message)
+            put("file", name)
+            put("bytes", content.toByteArray(Charsets.UTF_8).size)
+        }
+    }
+
+    private suspend fun makeVideo(args: JsonObject): JsonObject {
+        val title = args.string("title") ?: return error("Missing argument \"title\".")
+        val lines = args.stringList("lines")
+        if (lines.isEmpty()) return error("Video ke liye kam se kam 3 lines chahiye.")
+        val seconds = (args.int("seconds") ?: 6).coerceIn(2, 15)
+
+        val (ok, message) = host.generateVideo(title, lines.take(8), seconds)
+        if (!ok) return error(message)
+        return buildJsonObject {
+            put("status", "ok")
+            put("message", message)
+            put("seconds", seconds)
+        }
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private fun error(message: String): JsonObject = buildJsonObject {
@@ -206,4 +301,10 @@ class JarvisTools(private val host: ToolHost) {
 
     private fun JsonObject.int(key: String): Int? =
         (this[key] as? JsonPrimitive)?.contentOrNull?.toFloatOrNull()?.toInt()
+
+    private fun JsonObject.stringList(key: String): List<String> =
+        (this[key] as? JsonArray)
+            ?.mapNotNull { element -> (element as? JsonPrimitive)?.contentOrNull?.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?: emptyList()
 }

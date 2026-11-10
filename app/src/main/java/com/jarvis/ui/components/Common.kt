@@ -74,7 +74,12 @@ fun MicLevelBars(
 }
 
 @Composable
-fun ChatBubble(message: ChatMessage, modifier: Modifier = Modifier) {
+fun ChatBubble(
+    message: ChatMessage,
+    onOpenArtifact: (com.jarvis.domain.model.ChatArtifact) -> Unit = {},
+    onShareArtifact: (com.jarvis.domain.model.ChatArtifact) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     val isUser = message.role == ChatMessage.Role.USER
     val accent = LocalAccent.current
     Row(
@@ -124,6 +129,13 @@ fun ChatBubble(message: ChatMessage, modifier: Modifier = Modifier) {
                 fontSize = 14.sp,
                 lineHeight = 19.sp,
             )
+            message.artifact?.let { artifact ->
+                ArtifactCard(
+                    artifact = artifact,
+                    onOpen = onOpenArtifact,
+                    onShare = onShareArtifact,
+                )
+            }
         }
     }
 }

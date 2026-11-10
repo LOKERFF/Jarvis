@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Files Jarvis writes for the user, shared only through the provider. -->
+    <files-path name="artifacts" path="artifacts/" />
+    <files-path name="uploads" path="uploads/" />
+    <files-path name="workspace" path="workspace/" />
+</paths>

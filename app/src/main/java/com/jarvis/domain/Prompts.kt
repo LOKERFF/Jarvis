@@ -32,6 +32,7 @@ object Prompts {
         language: String,
         currentModel: String,
         availableModels: List<String>,
+        learnedRules: List<String> = emptyList(),
     ): String {
         val base = userPrompt.ifBlank { BASE_SYSTEM_PROMPT }
         val models = if (availableModels.isEmpty()) {
@@ -55,6 +56,31 @@ object Prompts {
             appendLine("  $models")
             appendLine("- After a tool returns, describe the real result in one short sentence.")
             appendLine("- If a tool returns status=error, say what failed. Never pretend it worked.")
+            appendLine("- create_file: writes a REAL file on the phone and shows it in chat.")
+            appendLine("- make_video: builds a real MP4 on the phone (title + 3-8 short lines).")
+            appendLine()
+            appendLine("## Files and video (chat delivery)")
+            appendLine("- When the user says \"... bhejo\", \"... banao\" or \"file likh kar bhejo\",")
+            appendLine("  call create_file with the EXACT filename they asked (txt.txt, index.html, …)")
+            appendLine("  and the complete file content. Never send a summary instead of the file.")
+            appendLine("- When the user asks for a video, call make_video. It renders text cards into an")
+            appendLine("  MP4 locally. It cannot download or invent footage, so keep the script short.")
+            appendLine("- The file is created only if the tool returns status=ok. Otherwise say it failed.")
+            appendLine()
+            appendLine("## Learning from corrections")
+            appendLine("- If the user says something was wrong (\"ye galat hai\", \"ise aise sudharo\"),")
+            appendLine("  the app stores a permanent rule and injects it here as \"Saved corrections\".")
+            appendLine("- Saved corrections OVERRIDE your normal habits. Apply them before acting.")
+            appendLine()
+            appendLine("## Language for module tasks")
+            appendLine("- For setup, file, terminal and learning tasks answer in simple Hindi (Hinglish ok).")
+            appendLine()
+            appendLine("## Saved corrections (must follow)")
+            if (learnedRules.isEmpty()) {
+                appendLine("- none yet")
+            } else {
+                learnedRules.forEach { rule -> appendLine("- $rule") }
+            }
             appendLine()
             appendLine("## Hard rules")
             appendLine("- Never ask for, repeat or store passwords, PINs, OTPs, card numbers, SMS content,")
