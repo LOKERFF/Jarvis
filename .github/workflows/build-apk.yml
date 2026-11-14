@@ -4,6 +4,9 @@ name: Build Debug APK
 # the produced APK and publishes it as a GitHub Release asset.
 #
 # This is the ONLY workflow that runs Gradle. publish-apk.yml stays release-only.
+#
+# If the build fails, the tail of the Gradle log is posted as a commit comment so
+# the failure can be inspected without downloading the (large) workflow log.
 
 on:
   workflow_dispatch:
@@ -42,14 +45,30 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install required SDK packages
+      - name: Locate Android SDK and install packages
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK" ]; then
+            echo "::error::No Android SDK directory found (looked at $SDK)"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "Using Android SDK at $SDK"
+          ls "$SDK" || true
+          echo "--- platforms ---"; ls "$SDK/platforms" 2>/dev/null || echo "(none)"
+          echo "--- build-tools ---"; ls "$SDK/build-tools" 2>/dev/null || echo "(none)"
+
+          SDKMGR="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDKMGR" ]; then
+            yes | "$SDKMGR" --licenses > /dev/null || true
+            "$SDKMGR" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools" || true
+          else
+            echo "::warning::sdkmanager not found at $SDKMGR; relying on preinstalled packages"
+          fi
+
+          echo "--- after install ---"; ls "$SDK/platforms" || true
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
@@ -57,7 +76,25 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        id: build
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
+
+      - name: Report build failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          {
+            echo "### Build failed — tail of build.log"
+            echo ""
+            echo '```'
+            tail -n 120 build.log 2>/dev/null || echo "(no build.log)"
+            echo '```'
+          } > failure.md
+          gh api -X POST "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" \
+            -f body="$(cat failure.md)" || echo "::warning::could not post commit comment"
+          printf '%s\n' "$(cat failure.md)" >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Verify APK
         run: |
