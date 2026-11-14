@@ -89,10 +89,14 @@ object SetupPlanValidator {
                 SetupStep.KIND_WRITE -> {
                     val path = safePath(step.path)
                     when {
-                        path == null ->
+                        path == null -> {
                             errors += "Step ${index + 1}: file path galat hai (${step.path})."
-                        step.content.length > MAX_FILE_CHARS ->
+                            null
+                        }
+                        step.content.length > MAX_FILE_CHARS -> {
                             errors += "Step ${index + 1}: file content bahut bada hai."
+                            null
+                        }
                         else -> SetupStep(
                             title = title,
                             kind = SetupStep.KIND_WRITE,
@@ -106,12 +110,18 @@ object SetupPlanValidator {
                     val command = step.command.trim()
                     val blocked = CommandGuard.isBlocked(command)
                     when {
-                        command.isEmpty() ->
+                        command.isEmpty() -> {
                             errors += "Step ${index + 1}: command khali hai."
-                        command.length > MAX_COMMAND_CHARS ->
+                            null
+                        }
+                        command.length > MAX_COMMAND_CHARS -> {
                             errors += "Step ${index + 1}: command bahut lambi hai."
-                        blocked != null ->
+                            null
+                        }
+                        blocked != null -> {
                             errors += "Step ${index + 1}: $blocked"
+                            null
+                        }
                         else -> SetupStep(
                             title = title,
                             kind = SetupStep.KIND_SHELL,

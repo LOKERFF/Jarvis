@@ -87,7 +87,7 @@ object OrbGeometry {
         }
     }
 
-    private fun custom(out: FloatArray, count: Int, triple: List<MiniExpr.Fn>) {
+    private fun custom(out: FloatArray, count: Int, triple: List<MiniExprFn>) {
         for (i in 0 until count) {
             val u = hash01(i, 17)
             val v = hash01(i, 43)

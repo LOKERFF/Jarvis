@@ -30,11 +30,12 @@ import kotlin.math.tan
  *   functions      sin cos tan abs sqrt exp log ln floor ceil round sign
  *                  min(a,b) max(a,b) pow(a,b) atan2(y,x)
  */
+/** Compiled orb expression: surface params u, v (0..1) and time t (seconds). */
+typealias MiniExprFn = (u: Double, v: Double, t: Double) -> Double
+
 object MiniExpr {
 
-    typealias Fn = (u: Double, v: Double, t: Double) -> Double
-
-    fun parse(source: String): Fn? {
+    fun parse(source: String): MiniExprFn? {
         return try {
             val parser = Parser(tokenize(source))
             val fn = parser.expression()
@@ -49,7 +50,7 @@ object MiniExpr {
      * A custom shape is three expressions separated by ';' -> x ; y ; z.
      * Returns null if the text does not contain exactly three valid formulas.
      */
-    fun parseTriple(source: String): List<Fn>? {
+    fun parseTriple(source: String): List<MiniExprFn>? {
         val parts = source.split(';').map { it.trim() }.filter { it.isNotEmpty() }
         if (parts.size != 3) return null
         val fns = parts.map { parse(it) ?: return null }
@@ -131,9 +132,9 @@ object MiniExpr {
             }
         }
 
-        fun expression(): Fn = addSub()
+        fun expression(): MiniExprFn = addSub()
 
-        private fun addSub(): Fn {
+        private fun addSub(): MiniExprFn {
             var left = mulDiv()
             while (true) {
                 val token = peek()
@@ -152,7 +153,7 @@ object MiniExpr {
             }
         }
 
-        private fun mulDiv(): Fn {
+        private fun mulDiv(): MiniExprFn {
             var left = unary()
             while (true) {
                 val token = peek()
@@ -174,7 +175,7 @@ object MiniExpr {
             }
         }
 
-        private fun unary(): Fn {
+        private fun unary(): MiniExprFn {
             val token = peek()
             if (token is Token.Sym && token.char == '-') {
                 pos++
@@ -188,7 +189,7 @@ object MiniExpr {
             return power()
         }
 
-        private fun power(): Fn {
+        private fun power(): MiniExprFn {
             val base = atom()
             val token = peek()
             if (token is Token.Sym && token.char == '^') {
@@ -203,7 +204,7 @@ object MiniExpr {
             return base
         }
 
-        private fun atom(): Fn {
+        private fun atom(): MiniExprFn {
             val token = next()
             return when (token) {
                 is Token.Num -> {
@@ -225,7 +226,7 @@ object MiniExpr {
             }
         }
 
-        private fun identifier(name: String): Fn {
+        private fun identifier(name: String): MiniExprFn {
             // constants
             when (name) {
                 "pi" -> return { _, _, _ -> Math.PI }
