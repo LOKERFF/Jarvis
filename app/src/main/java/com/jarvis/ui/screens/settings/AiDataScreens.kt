@@ -58,27 +58,60 @@ fun AiModelsScreen(onBack: () -> Unit, vm: ModelsViewModel = viewModel()) {
     val models by vm.models.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val updatedAt by vm.updatedAt.collectAsStateWithLifecycle()
+    val perModelVoice by vm.perModelVoiceEnabled.collectAsStateWithLifecycle()
+    val modelVoiceMap by vm.modelVoiceOverrides.collectAsStateWithLifecycle()
     val accent = LocalAccent.current
+
+    var category by remember { mutableStateOf("ALL") }
+    var customModelInput by remember { mutableStateOf("") }
+
+    val filteredModels = remember(models, category) {
+        when (category) {
+            "2.5" -> models.filter { "2.5" in it.lowercase() }
+            "PRO" -> models.filter { "pro" in it.lowercase() }
+            "FLASH" -> models.filter { "flash" in it.lowercase() && "lite" !in it.lowercase() }
+            "LITE" -> models.filter { "lite" in it.lowercase() }
+            else -> models
+        }
+    }
+    val activeMeta = remember(selected) { com.jarvis.data.prefs.AppPreferences.describeModel(selected) }
 
     SettingsPage(
         title = "AI Models",
-        subtitle = "Aapki Gemini key se live fetch kiye gaye",
+        subtitle = "Alag-alag Gemini models yahan se badlo",
         onBack = onBack,
     ) {
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    CardTitle("Model List")
-                    SettingsHint(
-                        if (updatedAt == 0L) {
-                            "Abhi load nahi hua. Refresh dabao."
-                        } else {
-                            "Updated ${formatTime(updatedAt)}"
-                        }
+                    CardTitle("Active Gemini Model")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = selected,
+                        color = accent,
+                        fontSize = 15.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = activeMeta.description,
+                        color = TextSecondary,
+                        fontSize = 12.sp,
                     )
                 }
+                StatusChip(text = activeMeta.tier, color = accent, filled = true)
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SettingsHint(
+                    if (updatedAt == 0L) {
+                        "Built-in Gemini presets active · Live API ke liye Refresh dabao"
+                    } else {
+                        "Live list updated: ${formatTime(updatedAt)}"
+                    }
+                )
+                Spacer(modifier = Modifier.weight(1f))
                 GhostButton(
-                    text = if (vm.ui.loading) "Load ho raha…" else "Refresh",
+                    text = if (vm.ui.loading) "Load ho raha…" else "Refresh Live",
                     onClick = { vm.refresh() },
                     enabled = !vm.ui.loading,
                 )
@@ -94,41 +127,124 @@ fun AiModelsScreen(onBack: () -> Unit, vm: ModelsViewModel = viewModel()) {
         }
 
         GlassCard {
-            CardTitle("Model Chuno")
-            Spacer(modifier = Modifier.height(4.dp))
-            SettingsHint(
-                "Jarvis set_model se khud bhi model badal sakta hai, par sirf isi list me se."
-            )
+            CardTitle("Gemini Model Chuno (${filteredModels.size})")
+            Spacer(modifier = Modifier.height(6.dp))
+            SettingsHint("Har kaam ke hisaab se Pro, Flash ya Lite Gemini model select karo.")
             Spacer(modifier = Modifier.height(10.dp))
-            if (models.isEmpty()) {
+            ChoiceChips(
+                options = listOf(
+                    "ALL" to "Sab",
+                    "2.5" to "Gemini 2.5",
+                    "PRO" to "Pro",
+                    "FLASH" to "Flash",
+                    "LITE" to "Lite",
+                ),
+                selected = category,
+                onSelect = { category = it },
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (filteredModels.isEmpty()) {
                 Text(
-                    text = "Abhi koi model load nahi hua. API Keys me key add karke Refresh dabao.",
+                    text = "Is filter me koi model nahi mila. 'Sab' chuno ya Refresh Live dabao.",
                     color = TextSecondary,
                     fontSize = 13.sp,
-                    lineHeight = 18.sp,
                 )
             } else {
-                models.forEach { model ->
+                filteredModels.forEach { model ->
                     val isSelected = model == selected
+                    val meta = com.jarvis.data.prefs.AppPreferences.describeModel(model)
+                    val tierColor = when {
+                        "PRO" in meta.tier -> com.jarvis.ui.theme.NeonPurple
+                        "LITE" in meta.tier -> SuccessGreen
+                        else -> accent
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { vm.select(model) }
-                            .padding(vertical = 9.dp),
+                            .padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = model,
-                            color = if (isSelected) accent else TextPrimary,
-                            fontSize = 14.sp,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = model,
+                                    color = if (isSelected) accent else TextPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Medium,
+                                )
+                                StatusChip(text = meta.tier, color = tierColor)
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            val assignedVoice = modelVoiceMap[model]?.let {
+                                com.jarvis.voice.VoicePreset.fromId(it).title
+                            }
+                            val subtitle = if (perModelVoice && assignedVoice != null) {
+                                "${meta.description} · Awaaz: $assignedVoice"
+                            } else {
+                                meta.description
+                            }
+                            Text(
+                                text = subtitle,
+                                color = TextMuted,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                            )
+                        }
+                        Spacer(modifier = Modifier.padding(horizontal = 4.dp))
                         if (isSelected) {
                             StatusChip(text = "IN USE", color = accent, filled = true)
+                        } else {
+                            GhostButton(text = "Use", onClick = { vm.select(model) }, accent = accent)
                         }
                     }
                 }
             }
+        }
+
+        GlassCard {
+            CardTitle("Custom Gemini Model ID")
+            Spacer(modifier = Modifier.height(4.dp))
+            SettingsHint("Agar koi naya ya experimental Gemini model ID use karna ho to yahan likho.")
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedTextField(
+                value = customModelInput,
+                onValueChange = { customModelInput = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                placeholder = { Text(text = "e.g. gemini-2.5-pro-preview-05-06", color = TextMuted) },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        if (customModelInput.isNotBlank()) {
+                            vm.addAndSelectCustomModel(customModelInput)
+                            customModelInput = ""
+                        }
+                    }
+                ),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = accent,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.18f),
+                    cursorColor = accent,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                ),
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            NeonButton(
+                text = "Custom Model Set Karo",
+                onClick = {
+                    vm.addAndSelectCustomModel(customModelInput)
+                    customModelInput = ""
+                },
+                enabled = customModelInput.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

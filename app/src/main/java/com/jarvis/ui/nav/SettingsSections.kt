@@ -21,13 +21,13 @@ enum class SettingsSection(
         "ai_brain", "AI Brain", "System prompt and creativity", 1, true, "BR"
     ),
     AI_MODELS(
-        "ai_models", "AI Models", "Fetch and choose a Gemini model", 1, true, "MD"
+        "ai_models", "AI Models", "Alag-alag Gemini models (Pro, Flash, Lite) badlo", 1, true, "MD"
     ),
     API_KEYS(
-        "api_keys", "API Keys", "Gemini key, stored in the Keystore", 1, true, "KY"
+        "api_keys", "API Keys", "Gemini key, Android Keystore me surakshit", 1, true, "KY"
     ),
     VOICE(
-        "voice", "Voice", "Speech output, rate, wake word toggles", 1, true, "VO"
+        "voice", "Voice & Awaaz", "Alag-alag awaaz, device TTS voices aur speed", 1, true, "VO"
     ),
     MODULE(
         "module",

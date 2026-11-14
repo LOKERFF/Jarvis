@@ -1,59 +1,35 @@
 # apk-distribution
 
-This folder is the single place the *genuine, compiled* debug APK is stored so the
-release workflow (`.github/workflows/publish-apk.yml`) can publish it.
+Automated Release APK builds run via `.github/workflows/build-apk.yml` and publish directly to the GitHub Release tagged **`v2`** (`jarvis-v2-release.apk`).
 
-## Status of the APK right now
+If you build a prebuilt APK locally and commit it to this folder, `.github/workflows/publish-apk.yml` validates the archive + SHA-256 checksum and publishes/updates the **`v2`** GitHub Release.
 
-**No APK is committed yet.** The build agent that prepared this folder has no JDK,
-no Android SDK and no Gradle, and its network blocks `dl.google.com`,
-`services.gradle.org` and `repo.maven.apache.org`, so a real build could not be
-run there. No placeholder, renamed zip or simulated APK was created on purpose.
+## Producing a Release APK locally
 
-## Producing the APK (one real build, outside GitHub Actions)
-
-Requirements: JDK 17, Android SDK Platform 35 + Build-Tools, Gradle 8.9 (the
-wrapper already pins it).
-
-Fastest way (one command, from the repo root):
+Requirements: JDK 17, Android SDK Platform 35 + Build-Tools `35.0.0`, Gradle 8.9.
 
 ```bash
 ./build-apk.sh
 ```
 
-It runs the build, copies the APK here, writes the checksum, verifies both and
-prints the git commands. Manual equivalent:
+This builds `:app:assembleRelease` (`versionCode = 2`, `versionName = "2.0.0"`), signs the APK, verifies it with `apksigner` and `unzip -tq`, and writes:
+
+- `apk-distribution/jarvis-v2-release.apk`
+- `apk-distribution/jarvis-v2-release.apk.sha256`
+
+To build a debug APK instead:
 
 ```bash
-cd <repo>
-./gradlew clean assembleDebug
-cp app/build/outputs/apk/debug/app-debug.apk apk-distribution/app-debug.apk
-cd apk-distribution
-sha256sum app-debug.apk > app-debug.apk.sha256
+./build-apk.sh debug
 ```
 
-`app-debug.apk.sha256` must stay in the standard `sha256sum` format:
+## Direct Download (`v2` Release)
 
 ```
-<64 hex characters>  app-debug.apk
+https://github.com/<owner>/<repo>/releases/download/v2/jarvis-v2-release.apk
 ```
 
-## Then
+## Never commit here
 
-Commit `apk-distribution/app-debug.apk` and `apk-distribution/app-debug.apk.sha256`
-and push to `main` (or `master`). The workflow validates the APK (exists, non-empty,
-checksum matches, `unzip -tq` passes) and only then creates a release with the tag
-`debug-apk-build-<run>-<attempt>`, marking it latest. It never builds the app and
-never installs an Android SDK.
-
-Direct download after a successful run:
-
-```
-https://github.com/<owner>/<repo>/releases/latest/download/app-debug.apk
-```
-
-## Never put here
-
-- release keystores, `keystore.properties`, passwords or API keys
-- APKs from another project or an older/failed build
-- renamed zips or empty files
+- `jarvis-release.jks`, `debug.keystore`, `keystore.properties`, passwords, or API keys
+- APKs from another project or unverified builds

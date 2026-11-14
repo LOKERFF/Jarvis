@@ -1,15 +1,7 @@
-name: Publish APK Release
+name: Publish Prebuilt APK Release
 
-# Release-only workflow.
-# The APK is compiled OUTSIDE GitHub Actions (Android Studio / any machine with
-# JDK 17 + Android SDK 35) and committed to apk-distribution/app-debug.apk
-# together with its .sha256 file.
-# This workflow never installs an SDK, never runs Gradle and never builds the app.
-#
-# State handling:
-#   * APK not committed yet      -> green run, clear notice, NOTHING published
-#   * APK empty / checksum bad / corrupt archive -> red run, NOTHING published
-#   * APK valid                  -> GitHub Release (tag debug-apk-build-<run>-<attempt>)
+# Release-only workflow for prebuilt APKs committed into apk-distribution/.
+# Automated compilation runs in .github/workflows/build-apk.yml (Release tag: v2).
 
 on:
   push:
@@ -17,137 +9,101 @@ on:
       - main
       - master
     paths:
-      - 'apk-distribution/app-debug.apk'
-      # So that pushing an updated workflow itself proves it is wired up.
+      - 'apk-distribution/*.apk'
+      - 'apk-distribution/*.sha256'
       - '.github/workflows/publish-apk.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# Never let two publishes race each other.
 concurrency:
   group: publish-apk-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    name: Publish existing APK
+    name: Publish Prebuilt APK (v2)
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      APK_PATH: apk-distribution/app-debug.apk
-      SUM_PATH: apk-distribution/app-debug.apk.sha256
+      RELEASE_TAG: v2
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Check whether an APK is committed
+      - name: Locate prebuilt APK
         run: |
           set -euo pipefail
-
-          echo "Checking $APK_PATH"
-          if [ ! -f "$APK_PATH" ]; then
-            echo "::notice title=Nothing to publish::$APK_PATH is not committed yet. Build the APK, commit it with its .sha256 file, then push again. No release was created."
+          APK_PATH="$(find apk-distribution -maxdepth 1 -name '*.apk' | head -n1 || true)"
+          if [ -z "$APK_PATH" ]; then
+            echo "::notice title=Nothing to publish::No prebuilt APK in apk-distribution/. Automated release builds run in build-apk.yml."
             echo "SKIP_PUBLISH=true" >> "$GITHUB_ENV"
             {
-              echo "## Nothing to publish yet"
+              echo "## No prebuilt APK committed"
               echo ""
-              echo "\`$APK_PATH\` is not in the repository, so there is no APK to release."
-              echo ""
-              echo "**No release was created and nothing was published.**"
-              echo ""
-              echo "To publish:"
-              echo ""
-              echo '```bash'
-              echo "./gradlew clean assembleDebug"
-              echo "cp app/build/outputs/apk/debug/app-debug.apk apk-distribution/app-debug.apk"
-              echo "cd apk-distribution && sha256sum app-debug.apk > app-debug.apk.sha256"
-              echo '```'
-              echo ""
-              echo "Commit both files and push to \`main\`; this workflow then validates and publishes them."
+              echo "Use the **Build Jarvis v2 Release APK** workflow (\`.github/workflows/build-apk.yml\`) to compile and publish \`$RELEASE_TAG\` automatically."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-
           echo "SKIP_PUBLISH=false" >> "$GITHUB_ENV"
-          echo "APK file found"
+          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
+          echo "SUM_PATH=${APK_PATH}.sha256" >> "$GITHUB_ENV"
 
-      - name: Validate APK and checksum
+      - name: Validate prebuilt APK and SHA-256
         if: env.SKIP_PUBLISH != 'true'
         run: |
           set -euo pipefail
-
-          if [ ! -s "$APK_PATH" ]; then
-            echo "::error::$APK_PATH exists but is empty"
-            exit 1
-          fi
-
-          echo "Checking $SUM_PATH"
-          if [ ! -f "$SUM_PATH" ]; then
-            echo "::error::Checksum file not found at $SUM_PATH"
-            exit 1
-          fi
+          [ -s "$APK_PATH" ] || { echo "::error::$APK_PATH is empty"; exit 1; }
+          [ -f "$SUM_PATH" ] || { echo "::error::Missing checksum at $SUM_PATH"; exit 1; }
 
           EXPECTED="$(grep -Eo '^[0-9a-fA-F]{64}' "$SUM_PATH" | head -n1 | tr 'A-F' 'a-f')"
-          if [ -z "$EXPECTED" ]; then
-            echo "::error::No SHA-256 digest found in $SUM_PATH"
-            exit 1
-          fi
+          [ -n "$EXPECTED" ] || { echo "::error::Invalid SHA-256 checksum in $SUM_PATH"; exit 1; }
           ACTUAL="$(sha256sum "$APK_PATH" | awk '{print $1}')"
-          if [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "::error::Checksum mismatch: file says $EXPECTED, APK is $ACTUAL"
-            exit 1
-          fi
-          echo "Checksum matches: $ACTUAL"
+          [ "$EXPECTED" = "$ACTUAL" ] || { echo "::error::Checksum mismatch: $EXPECTED != $ACTUAL"; exit 1; }
 
-          if ! unzip -tq "$APK_PATH" > /dev/null; then
-            echo "::error::$APK_PATH is not a valid zip/APK archive"
-            exit 1
-          fi
-          echo "Archive structure is valid"
-
+          unzip -tq "$APK_PATH" > /dev/null
           SIZE="$(stat -c%s "$APK_PATH")"
           echo "APK_SIZE=$SIZE" >> "$GITHUB_ENV"
           echo "APK_SHA=$ACTUAL" >> "$GITHUB_ENV"
-          echo "Validated: $SIZE bytes, sha256 $ACTUAL"
 
-      - name: Create GitHub Release with the APK
+      - name: Publish or update GitHub Release (v2)
         if: env.SKIP_PUBLISH != 'true'
         run: |
           set -euo pipefail
-
-          TAG="debug-apk-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "::error::Release $TAG already exists; refusing to overwrite"
-            exit 1
+          NOTES="Jarvis $RELEASE_TAG prebuilt APK from commit $GITHUB_SHA. SHA-256: $APK_SHA"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$APK_PATH" "$SUM_PATH" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Jarvis $RELEASE_TAG" \
+              --notes "$NOTES" \
+              --latest
+          else
+            gh release create "$RELEASE_TAG" "$APK_PATH" "$SUM_PATH" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Jarvis $RELEASE_TAG" \
+              --notes "$NOTES" \
+              --latest
           fi
-
-          gh release create "$TAG" "$APK_PATH" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Jarvis debug APK $TAG" \
-            --notes "Debug APK built outside GitHub Actions from commit $GITHUB_SHA. SHA-256: $APK_SHA" \
-            --latest
-
-          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
-          echo "Published release $TAG"
 
       - name: Job summary
         if: env.SKIP_PUBLISH != 'true'
         run: |
           set -euo pipefail
           SIZE_MB="$(awk -v b="$APK_SIZE" 'BEGIN { printf "%.2f", b / 1048576 }')"
+          APK_NAME="$(basename "$APK_PATH")"
           {
-            echo "## APK release published"
+            echo "## Prebuilt APK published ($RELEASE_TAG)"
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
-            echo "| Release tag | \`$RELEASE_TAG\` |"
-            echo "| APK size | $APK_SIZE bytes ($SIZE_MB MB) |"
+            echo "| Release Tag | \`$RELEASE_TAG\` |"
+            echo "| File | \`$APK_NAME\` |"
+            echo "| Size | $APK_SIZE bytes ($SIZE_MB MB) |"
             echo "| SHA-256 | \`$APK_SHA\` |"
-            echo "| Release page | $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG |"
-            echo "| Latest download | $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/latest/download/app-debug.apk |"
-            echo ""
-            echo "This run only published the APK that was already committed; it did not compile anything."
+            echo "| Direct Download | $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$APK_NAME |"
           } >> "$GITHUB_STEP_SUMMARY"

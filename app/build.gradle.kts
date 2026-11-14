@@ -35,8 +35,8 @@ android {
         applicationId = "com.aistudio.jarvis.k7m4x2"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0-phase1"
+        versionCode = 2
+        versionName = "2.0.0"
 
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
         buildConfigField("String", "PLAY_INTEGRITY_PROJECT", "\"$playIntegrityProject\"")

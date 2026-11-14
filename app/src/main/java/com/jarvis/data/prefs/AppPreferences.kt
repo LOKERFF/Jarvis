@@ -5,9 +5,23 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.jarvis.domain.Prompts
 import com.jarvis.domain.orb.OrbSpec
+import com.jarvis.voice.VoicePreset
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+data class EffectiveVoice(
+    val presetId: String,
+    val voiceName: String,
+    val rate: Float,
+    val pitch: Float,
+)
+
+data class GeminiModelMeta(
+    val id: String,
+    val tier: String,
+    val description: String,
+)
 
 /**
  * Non-secret settings. Secrets live in [com.jarvis.core.security.SecureStore].
@@ -81,11 +95,27 @@ class AppPreferences(context: Context) {
     private val _hotwordOffline = MutableStateFlow(prefs.getBoolean(K_HOTWORD_OFFLINE, true))
     val hotwordOffline: StateFlow<Boolean> = _hotwordOffline.asStateFlow()
 
-    private val _ttsRate = MutableStateFlow(prefs.getFloat(K_TTS_RATE, 1.0f))
+    private val _ttsRate = MutableStateFlow(prefs.getFloat(K_TTS_RATE, VoicePreset.JARVIS_CLASSIC.rate))
     val ttsRate: StateFlow<Float> = _ttsRate.asStateFlow()
 
-    private val _ttsPitch = MutableStateFlow(prefs.getFloat(K_TTS_PITCH, 1.0f))
+    private val _ttsPitch = MutableStateFlow(prefs.getFloat(K_TTS_PITCH, VoicePreset.JARVIS_CLASSIC.pitch))
     val ttsPitch: StateFlow<Float> = _ttsPitch.asStateFlow()
+
+    private val _ttsVoicePreset = MutableStateFlow(
+        prefs.getString(K_VOICE_PRESET, VoicePreset.JARVIS_CLASSIC.id) ?: VoicePreset.JARVIS_CLASSIC.id
+    )
+    val ttsVoicePreset: StateFlow<String> = _ttsVoicePreset.asStateFlow()
+
+    private val _ttsVoiceName = MutableStateFlow(
+        prefs.getString(K_VOICE_NAME, "") ?: ""
+    )
+    val ttsVoiceName: StateFlow<String> = _ttsVoiceName.asStateFlow()
+
+    private val _perModelVoiceEnabled = MutableStateFlow(prefs.getBoolean(K_PER_MODEL_VOICE, false))
+    val perModelVoiceEnabled: StateFlow<Boolean> = _perModelVoiceEnabled.asStateFlow()
+
+    private val _modelVoiceOverrides = MutableStateFlow(loadModelVoiceMap())
+    val modelVoiceOverrides: StateFlow<Map<String, String>> = _modelVoiceOverrides.asStateFlow()
 
     private val _replyLanguage = MutableStateFlow(
         prefs.getString(K_LANGUAGE, Prompts.LANGUAGE_HINGLISH) ?: Prompts.LANGUAGE_HINGLISH
@@ -156,15 +186,23 @@ class AppPreferences(context: Context) {
         val clean = model.removePrefix("models/").trim()
         if (clean.isEmpty()) return
         _selectedModel.value = clean
+        if (!availableModels.value.contains(clean)) {
+            val updated = (listOf(clean) + availableModels.value).distinct()
+            _availableModels.value = updated
+            prefs.edit { putString(K_MODELS, updated.joinToString("\n")) }
+        }
         prefs.edit { putString(K_MODEL, clean) }
     }
 
     fun setAvailableModels(models: List<String>) {
-        val clean = models.map { it.removePrefix("models/") }.distinct().sorted()
-        _availableModels.value = clean
-        _modelsUpdatedAt.value = System.currentTimeMillis()
+        val clean = models.map { it.removePrefix("models/").trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        val finalModels = if (clean.isEmpty()) DEFAULT_MODELS else clean
+        _availableModels.value = finalModels
+        _modelsUpdatedAt.value = if (clean.isEmpty()) 0L else System.currentTimeMillis()
         prefs.edit {
-            putString(K_MODELS, clean.joinToString("\n"))
+            putString(K_MODELS, if (clean.isEmpty()) "" else finalModels.joinToString("\n"))
             putLong(K_MODELS_AT, _modelsUpdatedAt.value)
         }
     }
@@ -192,13 +230,78 @@ class AppPreferences(context: Context) {
     fun setTtsRate(value: Float) {
         val clamped = value.coerceIn(0.5f, 2f)
         _ttsRate.value = clamped
-        prefs.edit { putFloat(K_TTS_RATE, clamped) }
+        _ttsVoicePreset.value = VoicePreset.CUSTOM.id
+        prefs.edit {
+            putFloat(K_TTS_RATE, clamped)
+            putString(K_VOICE_PRESET, VoicePreset.CUSTOM.id)
+        }
     }
 
     fun setTtsPitch(value: Float) {
         val clamped = value.coerceIn(0.5f, 2f)
         _ttsPitch.value = clamped
-        prefs.edit { putFloat(K_TTS_PITCH, clamped) }
+        _ttsVoicePreset.value = VoicePreset.CUSTOM.id
+        prefs.edit {
+            putFloat(K_TTS_PITCH, clamped)
+            putString(K_VOICE_PRESET, VoicePreset.CUSTOM.id)
+        }
+    }
+
+    fun applyVoicePreset(presetId: String) {
+        val preset = VoicePreset.fromId(presetId)
+        _ttsVoicePreset.value = preset.id
+        if (preset != VoicePreset.CUSTOM) {
+            _ttsRate.value = preset.rate
+            _ttsPitch.value = preset.pitch
+            prefs.edit {
+                putString(K_VOICE_PRESET, preset.id)
+                putFloat(K_TTS_RATE, preset.rate)
+                putFloat(K_TTS_PITCH, preset.pitch)
+            }
+        } else {
+            prefs.edit { putString(K_VOICE_PRESET, preset.id) }
+        }
+    }
+
+    fun setTtsVoiceName(voiceName: String) {
+        _ttsVoiceName.value = voiceName
+        prefs.edit { putString(K_VOICE_NAME, voiceName) }
+    }
+
+    fun setPerModelVoiceEnabled(enabled: Boolean) {
+        _perModelVoiceEnabled.value = enabled
+        prefs.edit { putBoolean(K_PER_MODEL_VOICE, enabled) }
+    }
+
+    fun setVoicePresetForModel(modelId: String, presetId: String) {
+        val cleanModel = modelId.removePrefix("models/").trim()
+        if (cleanModel.isEmpty()) return
+        val next = _modelVoiceOverrides.value.toMutableMap()
+        next[cleanModel] = VoicePreset.fromId(presetId).id
+        _modelVoiceOverrides.value = next
+        saveModelVoiceMap(next)
+    }
+
+    fun effectiveVoiceForModel(modelId: String = _selectedModel.value): EffectiveVoice {
+        val cleanModel = modelId.removePrefix("models/").trim()
+        if (_perModelVoiceEnabled.value) {
+            val mappedPresetId = _modelVoiceOverrides.value[cleanModel]
+            if (mappedPresetId != null && mappedPresetId != VoicePreset.CUSTOM.id) {
+                val preset = VoicePreset.fromId(mappedPresetId)
+                return EffectiveVoice(
+                    presetId = preset.id,
+                    voiceName = _ttsVoiceName.value,
+                    rate = preset.rate,
+                    pitch = preset.pitch,
+                )
+            }
+        }
+        return EffectiveVoice(
+            presetId = _ttsVoicePreset.value,
+            voiceName = _ttsVoiceName.value,
+            rate = _ttsRate.value,
+            pitch = _ttsPitch.value,
+        )
     }
 
     fun setReplyLanguage(language: String) {
@@ -242,22 +345,47 @@ class AppPreferences(context: Context) {
         _systemPrompt.value = Prompts.BASE_SYSTEM_PROMPT
         _temperature.value = 0.7f
         _selectedModel.value = DEFAULT_MODEL
-        _availableModels.value = emptyList()
+        _availableModels.value = DEFAULT_MODELS
         _modelsUpdatedAt.value = 0L
         _continuousMode.value = false
         _speakReplies.value = true
         _hotwordEnabled.value = true
         _hotwordOffline.value = true
-        _ttsRate.value = 1.0f
-        _ttsPitch.value = 1.0f
+        _ttsRate.value = VoicePreset.JARVIS_CLASSIC.rate
+        _ttsPitch.value = VoicePreset.JARVIS_CLASSIC.pitch
+        _ttsVoicePreset.value = VoicePreset.JARVIS_CLASSIC.id
+        _ttsVoiceName.value = ""
+        _perModelVoiceEnabled.value = false
+        _modelVoiceOverrides.value = DEFAULT_MODEL_VOICE_MAP
         _replyLanguage.value = Prompts.LANGUAGE_HINGLISH
         _orbSpec.value = OrbSpec.DEFAULT
         _developerRawIo.value = false
     }
 
     private fun loadModelList(): List<String> {
-        val raw = prefs.getString(K_MODELS, null) ?: return emptyList()
-        return raw.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        val raw = prefs.getString(K_MODELS, null)?.trim().orEmpty()
+        if (raw.isEmpty()) return DEFAULT_MODELS
+        val saved = raw.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        return if (saved.isEmpty()) DEFAULT_MODELS else saved
+    }
+
+    private fun loadModelVoiceMap(): Map<String, String> {
+        val raw = prefs.getString(K_MODEL_VOICE_MAP, null) ?: return DEFAULT_MODEL_VOICE_MAP
+        val map = mutableMapOf<String, String>()
+        raw.split("\n").forEach { line ->
+            val idx = line.indexOf('=')
+            if (idx > 0) {
+                val k = line.substring(0, idx).trim()
+                val v = line.substring(idx + 1).trim()
+                if (k.isNotEmpty() && v.isNotEmpty()) map[k] = v
+            }
+        }
+        return if (map.isEmpty()) DEFAULT_MODEL_VOICE_MAP else map
+    }
+
+    private fun saveModelVoiceMap(map: Map<String, String>) {
+        val encoded = map.entries.joinToString("\n") { "${it.key}=${it.value}" }
+        prefs.edit { putString(K_MODEL_VOICE_MAP, encoded) }
     }
 
     companion object {
@@ -266,7 +394,40 @@ class AppPreferences(context: Context) {
         const val STATUS_LIMITED = "limited"
         const val STATUS_ERROR = "error"
 
-        const val DEFAULT_MODEL = "gemini-2.0-flash"
+        const val DEFAULT_MODEL = "gemini-2.5-flash"
+
+        val DEFAULT_MODELS = listOf(
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-pro",
+            "gemini-1.5-flash",
+        )
+
+        val DEFAULT_MODEL_VOICE_MAP = mapOf(
+            "gemini-2.5-pro" to VoicePreset.COMMAND_DEEP.id,
+            "gemini-2.5-flash" to VoicePreset.JARVIS_CLASSIC.id,
+            "gemini-2.5-flash-lite" to VoicePreset.TURBO_SPARK.id,
+            "gemini-2.0-flash" to VoicePreset.ARIA_NOVA.id,
+            "gemini-1.5-pro" to VoicePreset.COMMAND_DEEP.id,
+        )
+
+        fun describeModel(id: String): GeminiModelMeta {
+            val clean = id.removePrefix("models/").lowercase()
+            return when {
+                "2.5-pro" in clean -> GeminiModelMeta(id, "PRO", "Deep reasoning, complex coding & architecture")
+                "2.5-flash-lite" in clean -> GeminiModelMeta(id, "LITE", "Sabse tez, halka aur kam quota use")
+                "2.5-flash" in clean -> GeminiModelMeta(id, "2.5 FLASH", "Balanced smart assistant · speed + accuracy")
+                "2.0-flash-lite" in clean -> GeminiModelMeta(id, "LITE", "Fast lightweight chat & quick commands")
+                "2.0-flash" in clean -> GeminiModelMeta(id, "FLASH", "Reliable tool-calling & smooth voice replies")
+                "pro" in clean -> GeminiModelMeta(id, "PRO", "High accuracy & detailed planning")
+                "lite" in clean -> GeminiModelMeta(id, "LITE", "Instant low-latency replies")
+                "flash" in clean -> GeminiModelMeta(id, "FLASH", "Fast everyday Gemini model")
+                else -> GeminiModelMeta(id, "GEMINI", "Live Gemini API model")
+            }
+        }
 
         private const val NAME = "jarvis_settings"
         private const val K_EMAIL = "account_email"
@@ -288,6 +449,10 @@ class AppPreferences(context: Context) {
         private const val K_HOTWORD_OFFLINE = "hotword_offline"
         private const val K_TTS_RATE = "tts_rate"
         private const val K_TTS_PITCH = "tts_pitch"
+        private const val K_VOICE_PRESET = "tts_voice_preset"
+        private const val K_VOICE_NAME = "tts_voice_name"
+        private const val K_PER_MODEL_VOICE = "per_model_voice_enabled"
+        private const val K_MODEL_VOICE_MAP = "model_voice_map"
         private const val K_LANGUAGE = "reply_language"
         private const val K_ORB = "orb_spec"
         private const val K_DEV_RAW = "developer_raw_io"

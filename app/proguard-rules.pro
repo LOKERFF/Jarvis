@@ -13,6 +13,7 @@
 -keep class com.jarvis.data.remote.gemini.** { *; }
 -keep class com.jarvis.domain.model.** { *; }
 -keep class com.jarvis.domain.orb.** { *; }
+-keep class com.jarvis.domain.setup.** { *; }
 
 # OkHttp / Okio
 -dontwarn okhttp3.**

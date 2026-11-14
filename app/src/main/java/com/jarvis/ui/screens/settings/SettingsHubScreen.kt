@@ -41,9 +41,15 @@ fun SettingsHubScreen(
 ) {
     val prefs = ServiceLocator.prefs
     val model by prefs.selectedModel.collectAsStateWithLifecycle()
+    val voicePresetId by prefs.ttsVoicePreset.collectAsStateWithLifecycle()
+    val perModelVoice by prefs.perModelVoiceEnabled.collectAsStateWithLifecycle()
+    val modelVoiceMap by prefs.modelVoiceOverrides.collectAsStateWithLifecycle()
     val email by prefs.accountEmail.collectAsStateWithLifecycle()
     val limited by prefs.limitedMode.collectAsStateWithLifecycle()
     val accent = LocalAccent.current
+    val activeVoiceTitle = com.jarvis.voice.VoicePreset.fromId(
+        if (perModelVoice) modelVoiceMap[model] ?: voicePresetId else voicePresetId
+    ).title
 
     JarvisBackground {
         Column(
@@ -73,7 +79,7 @@ fun SettingsHubScreen(
                                     fontWeight = FontWeight.SemiBold,
                                 )
                                 Text(
-                                    text = "Model: $model",
+                                    text = "Model: $model · Awaaz: $activeVoiceTitle",
                                     color = TextMuted,
                                     fontSize = 12.sp,
                                 )

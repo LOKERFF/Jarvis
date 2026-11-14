@@ -291,28 +291,72 @@ fun VoiceScreen(onBack: () -> Unit) {
     val speak by prefs.speakReplies.collectAsStateWithLifecycle()
     val rate by prefs.ttsRate.collectAsStateWithLifecycle()
     val pitch by prefs.ttsPitch.collectAsStateWithLifecycle()
+    val selectedPreset by prefs.ttsVoicePreset.collectAsStateWithLifecycle()
+    val selectedVoiceName by prefs.ttsVoiceName.collectAsStateWithLifecycle()
+    val perModelVoice by prefs.perModelVoiceEnabled.collectAsStateWithLifecycle()
+    val modelVoiceMap by prefs.modelVoiceOverrides.collectAsStateWithLifecycle()
+    val models by prefs.availableModels.collectAsStateWithLifecycle()
     val offline by prefs.hotwordOffline.collectAsStateWithLifecycle()
     val language by prefs.replyLanguage.collectAsStateWithLifecycle()
     val accent = LocalAccent.current
     val tts = ServiceLocator.tts
+    val deviceVoices by tts.availableVoices.collectAsStateWithLifecycle()
     var hindiVoice by remember { mutableStateOf<Boolean?>(null) }
 
     SettingsPage(
-        title = "Voice",
-        subtitle = "Speech output and listening",
+        title = "Voice & Awaaz",
+        subtitle = "Alag-alag awaaz, pitch, speed aur model voices",
         onBack = onBack,
     ) {
         GlassCard {
-            CardTitle("Speech")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CardTitle("Awaaz Profile Chuno")
+                Spacer(modifier = Modifier.weight(1f))
+                StatusChip(
+                    text = com.jarvis.voice.VoicePreset.fromId(selectedPreset).title,
+                    color = accent,
+                    filled = true,
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            SettingsHint("Har profile Jarvis ki pitch, speed aur tone alag tarah set karta hai.")
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.jarvis.voice.VoicePreset.SELECTABLE.forEach { preset ->
+                    val isSelected = selectedPreset == preset.id
+                    LanguageOption(
+                        id = preset.id,
+                        title = preset.title,
+                        description = "${preset.subtitle} (Pitch ${String.format(java.util.Locale.US, "%.2f", preset.pitch)}x · Speed ${String.format(java.util.Locale.US, "%.2f", preset.rate)}x)",
+                        selected = selectedPreset,
+                        onSelect = { id ->
+                            prefs.applyVoicePreset(id)
+                            hindiVoice = tts.hasHindiVoice()
+                            tts.speak(
+                                text = sample(language, preset.title),
+                                rate = preset.rate,
+                                pitch = preset.pitch,
+                                voiceName = selectedVoiceName,
+                                presetId = preset.id,
+                            )
+                        },
+                    )
+                }
+            }
+        }
+
+        GlassCard {
+            CardTitle("Fine Tuning & Test")
             ToggleRow(
-                title = "Speak replies",
-                description = "Read every answer aloud. Turn off for silent chat.",
+                title = "Bolkar jawab do (Speak replies)",
+                description = "Off karne par Jarvis sirf chat me text likhega.",
                 checked = speak,
                 onCheckedChange = { prefs.setSpeakReplies(it) },
             )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "Speaking rate", color = TextSecondary, fontSize = 13.sp)
+                Text(text = "Speaking Speed", color = TextSecondary, fontSize = 13.sp)
                 Spacer(modifier = Modifier.weight(1f))
                 StatusChip(text = String.format(java.util.Locale.US, "%.2fx", rate), color = accent)
             }
@@ -328,7 +372,7 @@ fun VoiceScreen(onBack: () -> Unit) {
             )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "Pitch", color = TextSecondary, fontSize = 13.sp)
+                Text(text = "Voice Pitch (Awaaz ki tone)", color = TextSecondary, fontSize = 13.sp)
                 Spacer(modifier = Modifier.weight(1f))
                 StatusChip(text = String.format(java.util.Locale.US, "%.2fx", pitch), color = accent)
             }
@@ -345,15 +389,21 @@ fun VoiceScreen(onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GhostButton(
-                    text = "Test voice",
+                NeonButton(
+                    text = "Awaaz Test Karo",
                     onClick = {
                         hindiVoice = tts.hasHindiVoice()
-                        tts.speak(sample(language), rate, pitch)
+                        tts.speak(
+                            text = sample(language, com.jarvis.voice.VoicePreset.fromId(selectedPreset).title),
+                            rate = rate,
+                            pitch = pitch,
+                            voiceName = selectedVoiceName,
+                            presetId = selectedPreset,
+                        )
                     },
                 )
                 GhostButton(
-                    text = "Stop speaking",
+                    text = "Stop",
                     onClick = { tts.stop() },
                 )
             }
@@ -361,15 +411,13 @@ fun VoiceScreen(onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(8.dp))
                 if (has) {
                     Text(
-                        text = "Hindi voice found on this device.",
+                        text = "Is phone par Hindi/Hinglish voice engine active hai.",
                         color = SuccessGreen,
                         fontSize = 12.sp,
                     )
                 } else {
                     Text(
-                        text = "No Hindi voice is installed. Hindi replies will use the default " +
-                            "voice. Install one from Android Settings › System › Languages › " +
-                            "Text-to-speech output.",
+                        text = "Phone me Hindi TTS data missing hai. Neeche 'Android TTS Settings' se Hindi/India pack download kar sakte ho.",
                         color = com.jarvis.ui.theme.WarningAmber,
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
@@ -379,23 +427,153 @@ fun VoiceScreen(onBack: () -> Unit) {
         }
 
         GlassCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    CardTitle("Device TTS Voices")
+                    SettingsHint("Phone me installed real Google/System voices (${deviceVoices.size} mile)")
+                }
+                GhostButton(
+                    text = "Refresh",
+                    onClick = { tts.refreshVoices() },
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val autoSelected = selectedVoiceName.isBlank()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Auto (Hindi + English Smart Match)",
+                        color = if (autoSelected) accent else com.jarvis.ui.theme.TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = "Selected preset aur bhasha ke hisaab se best voice chunta hai.",
+                        color = TextMuted,
+                        fontSize = 11.sp,
+                    )
+                }
+                if (autoSelected) {
+                    StatusChip(text = "ACTIVE", color = accent, filled = true)
+                } else {
+                    GhostButton(
+                        text = "Use",
+                        onClick = {
+                            prefs.setTtsVoiceName("")
+                            tts.speak(sample(language, "Auto"), rate, pitch, "", selectedPreset)
+                        },
+                        accent = TextMuted,
+                    )
+                }
+            }
+
+            deviceVoices.take(12).forEach { voice ->
+                val isCurrent = selectedVoiceName == voice.name
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = voice.label,
+                            color = if (isCurrent) accent else com.jarvis.ui.theme.TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                        Text(
+                            text = "${voice.localeTag} · ${if (voice.isNetwork) "Neural/Online" else "Offline local"}",
+                            color = TextMuted,
+                            fontSize = 11.sp,
+                        )
+                    }
+                    if (isCurrent) {
+                        StatusChip(text = "ACTIVE", color = accent, filled = true)
+                    } else {
+                        GhostButton(
+                            text = "Sunao",
+                            onClick = {
+                                prefs.setTtsVoiceName(voice.name)
+                                tts.speak(sample(language, voice.label), rate, pitch, voice.name, selectedPreset)
+                            },
+                            accent = accent,
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            GhostButton(
+                text = "Android System TTS Settings Kholo",
+                onClick = { tts.openSystemTtsSettings() },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        GlassCard {
+            CardTitle("Alag Gemini Model = Alag Awaaz")
+            ToggleRow(
+                title = "Har model ke liye alag awaaz use karo",
+                description = "On karne par Pro, Flash aur Lite models apni assigned awaaz me bolenge.",
+                checked = perModelVoice,
+                onCheckedChange = { prefs.setPerModelVoiceEnabled(it) },
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            val highlightedModels = (listOf(prefs.selectedModel.value) + models)
+                .distinct()
+                .take(5)
+            val presetOptions = com.jarvis.voice.VoicePreset.SELECTABLE.map { it.id to it.title }
+            highlightedModels.forEach { modelId ->
+                val assignedPresetId = modelVoiceMap[modelId] ?: selectedPreset
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = modelId,
+                    color = accent,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                ChoiceChips(
+                    options = presetOptions,
+                    selected = assignedPresetId,
+                    onSelect = { chosenPreset ->
+                        prefs.setVoicePresetForModel(modelId, chosenPreset)
+                        if (!perModelVoice) prefs.setPerModelVoiceEnabled(true)
+                        val p = com.jarvis.voice.VoicePreset.fromId(chosenPreset)
+                        tts.speak(
+                            text = "$modelId ab ${p.title} awaaz me bolega.",
+                            rate = p.rate,
+                            pitch = p.pitch,
+                            voiceName = selectedVoiceName,
+                            presetId = p.id,
+                        )
+                    },
+                )
+            }
+        }
+
+        GlassCard {
             CardTitle("Listening")
             Spacer(modifier = Modifier.height(6.dp))
             SettingsHint(
-                "Phase 1 uses the phone's speech recogniser. With the toggle below on, short " +
-                    "wake-word bursts ask Android to stay on-device, so hours of room audio are " +
-                    "not sent to a server."
+                "Wake-word bursts Android ke speech recogniser par chalte hain. Offline toggle " +
+                    "on hone par device bina extra network bheje sunta hai."
             )
             ToggleRow(
-                title = "Prefer on-device recognition for the wake word",
-                description = "Needs an offline speech pack for your language.",
+                title = "Wake word ke liye on-device recognition",
+                description = "Aapki bhasha ka offline speech pack chahiye.",
                 checked = offline,
                 onCheckedChange = { prefs.setHotwordOffline(it) },
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "The microphone is always shown: a red mic chip and live level bars " +
-                    "appear while Jarvis listens.",
+                text = "Sunne ke waqt hamesha live mic indicator aur level bars dikhte hain.",
                 color = TextMuted,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
@@ -403,7 +581,7 @@ fun VoiceScreen(onBack: () -> Unit) {
         }
 
         GlassCard {
-            CardTitle("Recognition language")
+            CardTitle("Recognition & Reply Language")
             Spacer(modifier = Modifier.height(8.dp))
             ChoiceChips(
                 options = listOf(
@@ -416,16 +594,16 @@ fun VoiceScreen(onBack: () -> Unit) {
                 onSelect = { prefs.setReplyLanguage(it) },
             )
             Spacer(modifier = Modifier.height(8.dp))
-            SettingsHint("Also used for replies. Change it any time.")
+            SettingsHint("Ye reply aur voice dono ki bhasha control karta hai.")
         }
     }
 }
 
-private fun sample(language: String): String = when (language) {
-    Prompts.LANGUAGE_HINDI -> "नमस्ते। मैं जार्विस हूँ, आपका सहायक। मैं सुनने के लिए तैयार हूँ।"
-    Prompts.LANGUAGE_HINGLISH -> "Hello, main Jarvis hoon, aapka personal assistant. Main taiyaar hoon."
-    Prompts.LANGUAGE_ENGLISH -> "Hello. I am Jarvis, your personal assistant. I am ready."
-    else -> "Jarvis ready. I can speak English and Hindi. नमस्ते, मैं तैयार हूँ।"
+private fun sample(language: String, voiceLabel: String = "Jarvis"): String = when (language) {
+    Prompts.LANGUAGE_HINDI -> "नमस्ते, मैं जार्विस हूँ। अभी $voiceLabel आवाज़ सक्रिय है।"
+    Prompts.LANGUAGE_HINGLISH -> "Hello, main Jarvis hoon. Abhi $voiceLabel awaaz active hai, bataiye kya kaam hai?"
+    Prompts.LANGUAGE_ENGLISH -> "Hello. I am Jarvis speaking with the $voiceLabel voice profile."
+    else -> "Hello, main Jarvis hoon. $voiceLabel voice taiyaar hai."
 }
 
 // ---------------------------------------------------------------------------

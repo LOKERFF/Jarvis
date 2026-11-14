@@ -68,7 +68,7 @@ class GeminiApi(
         tools: List<Tool>,
         temperature: Double,
     ): GenerateContentResponse = withContext(Dispatchers.IO) {
-        val cleanModel = model.removePrefix("models/").ifBlank { "gemini-2.0-flash" }
+        val cleanModel = model.removePrefix("models/").ifBlank { "gemini-2.5-flash" }
         val url = "$BASE/models/$cleanModel:generateContent".toHttpUrlOrNull()
             ?: throw GeminiException("Internal error: model naam \"$cleanModel\" galat hai.")
 

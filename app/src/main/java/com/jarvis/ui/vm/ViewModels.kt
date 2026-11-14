@@ -295,6 +295,8 @@ class ModelsViewModel : ViewModel() {
     val models: StateFlow<List<String>> = prefs.availableModels
     val selected: StateFlow<String> = prefs.selectedModel
     val updatedAt: StateFlow<Long> = prefs.modelsUpdatedAt
+    val perModelVoiceEnabled: StateFlow<Boolean> = prefs.perModelVoiceEnabled
+    val modelVoiceOverrides: StateFlow<Map<String, String>> = prefs.modelVoiceOverrides
 
     fun refresh() {
         val key = secure.get(SecureStore.KEY_GEMINI)
@@ -307,9 +309,11 @@ class ModelsViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val list = gemini.listModels(key)
-                prefs.setAvailableModels(list.map { it.id })
-                audit.info("AI", "model list refreshed (${list.size} models)")
-                ui = AsyncUi(message = "${list.size} models mil gaye.")
+                val merged = (list.map { it.id } + com.jarvis.data.prefs.AppPreferences.DEFAULT_MODELS)
+                    .distinct()
+                prefs.setAvailableModels(merged)
+                audit.info("AI", "model list refreshed (${list.size} live models)")
+                ui = AsyncUi(message = "${list.size} live Gemini models mil gaye.")
             } catch (t: Throwable) {
                 ui = AsyncUi(error = t.message ?: "Models load nahi ho paye.")
             }
@@ -319,7 +323,26 @@ class ModelsViewModel : ViewModel() {
     fun select(model: String) {
         prefs.setSelectedModel(model)
         audit.info("MODEL", "user selected $model")
-        ui = AsyncUi(message = "Ab $model use ho raha hai.")
+        ui = AsyncUi(message = "Ab $model active hai.")
+    }
+
+    fun addAndSelectCustomModel(rawId: String) {
+        val clean = rawId.removePrefix("models/").trim()
+        if (clean.isEmpty()) {
+            ui = AsyncUi(error = "Model ID khali nahi ho sakta.")
+            return
+        }
+        prefs.setSelectedModel(clean)
+        audit.info("MODEL", "user selected custom model $clean")
+        ui = AsyncUi(message = "Custom model $clean set ho gaya.")
+    }
+
+    fun setVoiceForModel(modelId: String, presetId: String) {
+        prefs.setVoicePresetForModel(modelId, presetId)
+        if (!prefs.perModelVoiceEnabled.value) {
+            prefs.setPerModelVoiceEnabled(true)
+        }
+        ui = AsyncUi(message = "$modelId ke liye alag awaaz set ho gayi.")
     }
 }
 

@@ -6,6 +6,9 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+release-out/
+build.log
+failure.md
 
 # Android Studio / IntelliJ
 .idea/

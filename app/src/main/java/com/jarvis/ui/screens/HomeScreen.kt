@@ -345,9 +345,9 @@ fun HomeScreen(
                             .weight(1f)
                             .testTag("card_ai_brain"),
                         icon = Icons.Filled.Psychology,
-                        badge = if (keyOk) "KEY READY" else "KEY MISSING",
+                        badge = if (keyOk) "GEMINI" else "KEY NEEDED",
                         title = model.removePrefix("models/").take(18),
-                        subtitle = "Temp ${"%.1f".format(temperature)} · Gemini",
+                        subtitle = "Temp ${"%.1f".format(temperature)} · Tap model badlo",
                         accent = if (keyOk) NeonPurple else WarningAmber,
                         rotationX = -5f,
                         rotationY = -7f,
@@ -356,6 +356,8 @@ fun HomeScreen(
                                 if (keyOk) SettingsSection.AI_MODELS else SettingsSection.API_KEYS
                             )
                         },
+                        secondaryActionLabel = "Awaaz",
+                        onSecondaryClick = { onOpenSection(SettingsSection.VOICE) },
                     )
                 }
 

@@ -1,15 +1,31 @@
-name: Build Debug APK
+name: Build Jarvis v2 Release APK
 
-# Compiles the app on a GitHub-hosted runner (JDK 17 + Android SDK 35), verifies
-# the produced APK and publishes it as a GitHub Release asset.
-#
-# This is the ONLY workflow that runs Gradle. publish-apk.yml stays release-only.
-#
-# If the build fails, the tail of the Gradle log is posted as a commit comment so
-# the failure can be inspected without downloading the (large) workflow log.
+# Compiles the signed Release APK on GitHub Actions (JDK 17 + Android SDK 35 + Gradle 8.9),
+# verifies the APK via unzip + apksigner + SHA-256, uploads workflow artifacts,
+# and publishes (or updates) the GitHub Release tagged `v2`.
 
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: 'APK build variant'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - debug
+          - both
+      release_tag:
+        description: 'GitHub Release tag name'
+        required: true
+        default: 'v2'
+        type: string
+      publish_release:
+        description: 'Publish or update GitHub Release'
+        required: true
+        default: true
+        type: boolean
   push:
     branches:
       - main
@@ -19,7 +35,7 @@ on:
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
       - 'gradle.properties'
-      - 'gradle/libs.versions.toml'
+      - 'gradle/**'
       - '.github/workflows/build-apk.yml'
 
 permissions:
@@ -31,10 +47,13 @@ concurrency:
 
 jobs:
   build:
-    name: Build and publish debug APK
+    name: Build & Publish Jarvis v2 Release APK
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
+      BUILD_VARIANT: ${{ github.event.inputs.variant || 'release' }}
+      RELEASE_TAG: ${{ github.event.inputs.release_tag || 'v2' }}
+      PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.publish_release) || 'true' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -45,7 +64,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Locate Android SDK and install packages
+      - name: Locate Android SDK and install SDK 35 packages
         run: |
           set -euo pipefail
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
@@ -56,9 +75,6 @@ jobs:
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
           echo "Using Android SDK at $SDK"
-          ls "$SDK" || true
-          echo "--- platforms ---"; ls "$SDK/platforms" 2>/dev/null || echo "(none)"
-          echo "--- build-tools ---"; ls "$SDK/build-tools" 2>/dev/null || echo "(none)"
 
           SDKMGR="$SDK/cmdline-tools/latest/bin/sdkmanager"
           if [ -x "$SDKMGR" ]; then
@@ -68,25 +84,79 @@ jobs:
             echo "::warning::sdkmanager not found at $SDKMGR; relying on preinstalled packages"
           fi
 
-          echo "--- after install ---"; ls "$SDK/platforms" || true
-
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
+      - name: Prepare signing keystores for CI
+        env:
+          JARVIS_KEYSTORE_BASE64: ${{ secrets.JARVIS_KEYSTORE_BASE64 }}
+          JARVIS_KEYSTORE_PASSWORD: ${{ secrets.JARVIS_KEYSTORE_PASSWORD }}
+          JARVIS_KEYSTORE_ALIAS: ${{ secrets.JARVIS_KEYSTORE_ALIAS }}
+          JARVIS_KEY_PASSWORD: ${{ secrets.JARVIS_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ ! -f debug.keystore ]; then
+            echo "Generating ephemeral CI debug.keystore for debugConfig..."
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          if [ "${BUILD_VARIANT}" = "release" ] || [ "${BUILD_VARIANT}" = "both" ]; then
+            if [ -n "${JARVIS_KEYSTORE_BASE64:-}" ]; then
+              echo "Decoding release keystore from GitHub Secrets..."
+              printf '%s' "$JARVIS_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > jarvis-release.jks
+              KEY_PASS="${JARVIS_KEYSTORE_PASSWORD:-}"
+              KEY_ALIAS="${JARVIS_KEYSTORE_ALIAS:-jarvis}"
+              ALIAS_PASS="${JARVIS_KEY_PASSWORD:-$KEY_PASS}"
+            else
+              echo "JARVIS_KEYSTORE_BASE64 not configured; generating CI release signing keystore so APK is signed and installable..."
+              KEY_PASS="jarvis-ci-release-2026"
+              KEY_ALIAS="jarvis"
+              ALIAS_PASS="jarvis-ci-release-2026"
+              keytool -genkeypair -v \
+                -keystore jarvis-release.jks \
+                -storepass "$KEY_PASS" \
+                -alias "$KEY_ALIAS" \
+                -keypass "$ALIAS_PASS" \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Jarvis App,O=Jarvis,C=IN"
+            fi
+
+            printf 'storeFile=jarvis-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEY_PASS" "$KEY_ALIAS" "$ALIAS_PASS" > keystore.properties
+          fi
+
+      - name: Build APK
         id: build
         run: |
           set -o pipefail
-          gradle :app:assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
+          TASKS=""
+          if [ "$BUILD_VARIANT" = "release" ] || [ "$BUILD_VARIANT" = "both" ]; then
+            TASKS="$TASKS :app:assembleRelease"
+          fi
+          if [ "$BUILD_VARIANT" = "debug" ] || [ "$BUILD_VARIANT" = "both" ]; then
+            TASKS="$TASKS :app:assembleDebug"
+          fi
+          echo "Running: gradle$TASKS"
+          gradle $TASKS --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
 
       - name: Report build failure
         if: failure()
         run: |
           set -uo pipefail
           {
-            echo "### Build failed (run $GITHUB_RUN_ID, commit $GITHUB_SHA)"
+            echo "### Jarvis APK Build Failed (run $GITHUB_RUN_ID, commit $GITHUB_SHA)"
             echo ""
             echo "**Compiler diagnostics:**"
             echo '```'
@@ -95,74 +165,113 @@ jobs:
             echo ""
             echo "**Tail:**"
             echo '```'
-            tail -n 40 build.log 2>/dev/null || echo "(no build.log)"
+            tail -n 50 build.log 2>/dev/null || echo "(no build.log)"
             echo '```'
           } > failure.md
           gh api -X POST "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" \
             -f body="$(cat failure.md)" || echo "::warning::could not post commit comment"
-          printf '%s\n' "$(cat failure.md)" >> "$GITHUB_STEP_SUMMARY" || true
+          cat failure.md >> "$GITHUB_STEP_SUMMARY" || true
 
-      - name: Verify APK
-        run: |
-          set -euo pipefail
-          APK=app/build/outputs/apk/debug/app-debug.apk
-          if [ ! -f "$APK" ]; then
-            echo "::error::Build finished but $APK is missing"
-            exit 1
-          fi
-          if [ ! -s "$APK" ]; then
-            echo "::error::$APK is empty"
-            exit 1
-          fi
-          unzip -tq "$APK" > /dev/null
-          SHA="$(sha256sum "$APK" | awk '{print $1}')"
-          SIZE="$(stat -c%s "$APK")"
-          echo "APK_SIZE=$SIZE" >> "$GITHUB_ENV"
-          echo "APK_SHA=$SHA" >> "$GITHUB_ENV"
-          echo "Verified APK: $SIZE bytes, sha256 $SHA"
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-      - name: Publish GitHub Release
+      - name: Verify and package APKs
         run: |
           set -euo pipefail
           mkdir -p release-out
-          cp app/build/outputs/apk/debug/app-debug.apk release-out/app-debug.apk
-          printf '%s  app-debug.apk\n' "$APK_SHA" > release-out/app-debug.apk.sha256
+          APKSIGNER="${ANDROID_HOME}/build-tools/35.0.0/apksigner"
 
-          TAG="debug-apk-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "::error::Release $TAG already exists"
-            exit 1
+          if [ "$BUILD_VARIANT" = "release" ] || [ "$BUILD_VARIANT" = "both" ]; then
+            REL_APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n1 || true)"
+            if [ -z "$REL_APK" ] || [ ! -s "$REL_APK" ]; then
+              echo "::error::Expected release APK missing or empty"
+              exit 1
+            fi
+            unzip -tq "$REL_APK" > /dev/null
+            if [ -x "$APKSIGNER" ]; then
+              "$APKSIGNER" verify --print-certs "$REL_APK"
+            fi
+            cp "$REL_APK" release-out/jarvis-v2-release.apk
+            cp "$REL_APK" release-out/app-release.apk
+            ( cd release-out && sha256sum jarvis-v2-release.apk > jarvis-v2-release.apk.sha256 )
+            SHA="$(awk '{print $1}' release-out/jarvis-v2-release.apk.sha256)"
+            SIZE="$(stat -c%s release-out/jarvis-v2-release.apk)"
+            echo "PRIMARY_APK=jarvis-v2-release.apk" >> "$GITHUB_ENV"
+            echo "APK_SIZE=$SIZE" >> "$GITHUB_ENV"
+            echo "APK_SHA=$SHA" >> "$GITHUB_ENV"
+            echo "Verified release APK: $SIZE bytes, sha256 $SHA"
           fi
 
-          gh release create "$TAG" \
-            release-out/app-debug.apk \
-            release-out/app-debug.apk.sha256 \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Jarvis debug APK $TAG" \
-            --notes "Debug APK compiled by GitHub Actions from commit $GITHUB_SHA. SHA-256: $APK_SHA" \
-            --latest
+          if [ "$BUILD_VARIANT" = "debug" ] || [ "$BUILD_VARIANT" = "both" ]; then
+            DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
+            if [ ! -s "$DEBUG_APK" ]; then
+              echo "::error::Expected debug APK missing or empty at $DEBUG_APK"
+              exit 1
+            fi
+            unzip -tq "$DEBUG_APK" > /dev/null
+            if [ -x "$APKSIGNER" ]; then
+              "$APKSIGNER" verify --print-certs "$DEBUG_APK"
+            fi
+            cp "$DEBUG_APK" release-out/app-debug.apk
+            ( cd release-out && sha256sum app-debug.apk > app-debug.apk.sha256 )
+            if [ "$BUILD_VARIANT" = "debug" ]; then
+              SHA="$(awk '{print $1}' release-out/app-debug.apk.sha256)"
+              SIZE="$(stat -c%s release-out/app-debug.apk)"
+              echo "PRIMARY_APK=app-debug.apk" >> "$GITHUB_ENV"
+              echo "APK_SIZE=$SIZE" >> "$GITHUB_ENV"
+              echo "APK_SHA=$SHA" >> "$GITHUB_ENV"
+            fi
+            echo "Verified debug APK"
+          fi
 
-          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+      - name: Upload APK workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-${{ env.RELEASE_TAG }}-${{ env.BUILD_VARIANT }}
+          path: release-out/*
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Publish or update GitHub Release (v2)
+        if: env.PUBLISH_RELEASE == 'true'
+        run: |
+          set -euo pipefail
+          NOTES="$(printf 'Jarvis %s (%s APK) built cleanly from commit %s (run #%s).\nPrimary APK: %s\nSHA-256: %s' \
+            "$RELEASE_TAG" "$BUILD_VARIANT" "$GITHUB_SHA" "$GITHUB_RUN_NUMBER" "$PRIMARY_APK" "$APK_SHA")"
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; uploading fresh APKs with --clobber and updating notes..."
+            gh release upload "$RELEASE_TAG" release-out/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Jarvis $RELEASE_TAG" \
+              --notes "$NOTES" \
+              --latest
+          else
+            echo "Creating new GitHub Release $RELEASE_TAG..."
+            gh release create "$RELEASE_TAG" release-out/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Jarvis $RELEASE_TAG" \
+              --notes "$NOTES" \
+              --latest
+          fi
 
       - name: Job summary
         run: |
           set -euo pipefail
-          SIZE_MB="$(awk -v b="$APK_SIZE" 'BEGIN { printf "%.2f", b / 1048576 }')"
+          SIZE_MB="$(awk -v b="${APK_SIZE:-0}" 'BEGIN { printf "%.2f", b / 1048576 }')"
           {
-            echo "## Debug APK built and published"
+            echo "## Jarvis ${RELEASE_TAG} APK Build Complete"
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
-            echo "| Tag | \`$RELEASE_TAG\` |"
-            echo "| Size | $APK_SIZE bytes ($SIZE_MB MB) |"
-            echo "| SHA-256 | \`$APK_SHA\` |"
-            echo "| Release | $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG |"
-            echo "| Direct download | $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/latest/download/app-debug.apk |"
+            echo "| Release Tag | \`$RELEASE_TAG\` |"
+            echo "| Variant | \`$BUILD_VARIANT\` |"
+            echo "| Primary APK | \`$PRIMARY_APK\` |"
+            echo "| Size | ${APK_SIZE:-0} bytes ($SIZE_MB MB) |"
+            echo "| SHA-256 | \`${APK_SHA:-n/a}\` |"
+            if [ "${PUBLISH_RELEASE}" = "true" ]; then
+              echo "| Release Page | $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG |"
+              echo "| Direct Download | $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$PRIMARY_APK |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

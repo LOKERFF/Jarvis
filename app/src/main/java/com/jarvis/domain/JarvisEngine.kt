@@ -560,8 +560,15 @@ class JarvisEngine(
             afterSpeaking()
             return
         }
+        val voice = prefs.effectiveVoiceForModel(prefs.selectedModel.value)
         _state.update { it.copy(orb = OrbState.SPEAKING, speaking = true) }
-        tts.speak(text, prefs.ttsRate.value, prefs.ttsPitch.value)
+        tts.speak(
+            text = text,
+            rate = voice.rate,
+            pitch = voice.pitch,
+            voiceName = voice.voiceName,
+            presetId = voice.presetId,
+        )
 
         speechWatchdog?.cancel()
         speechWatchdog = scope.launch {
