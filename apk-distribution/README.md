@@ -15,6 +15,15 @@ run there. No placeholder, renamed zip or simulated APK was created on purpose.
 Requirements: JDK 17, Android SDK Platform 35 + Build-Tools, Gradle 8.9 (the
 wrapper already pins it).
 
+Fastest way (one command, from the repo root):
+
+```bash
+./build-apk.sh
+```
+
+It runs the build, copies the APK here, writes the checksum, verifies both and
+prints the git commands. Manual equivalent:
+
 ```bash
 cd <repo>
 ./gradlew clean assembleDebug
