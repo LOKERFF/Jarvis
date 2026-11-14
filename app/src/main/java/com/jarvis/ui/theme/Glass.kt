@@ -47,20 +47,41 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun JarvisBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+    val isDark = LocalIsDark.current
+    val accent = LocalAccent.current
+    val baseColors = if (isDark) {
+        listOf(VoidBlack, DeepVoid, VoidBlack)
+    } else {
+        listOf(Color(0xFF0F1B33), Color(0xFF1A2544), Color(0xFF0D162B))
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(VoidBlack, DeepVoid, VoidBlack)))
+            .background(Brush.verticalGradient(baseColors))
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(LocalAccent.current.copy(alpha = 0.12f), Color.Transparent),
-                        radius = 960f,
+                .drawBehind {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(accent.copy(alpha = if (isDark) 0.14f else 0.22f), Color.Transparent),
+                            center = Offset(size.width * 0.5f, size.height * 0.38f),
+                            radius = size.maxDimension * 0.65f,
+                        ),
+                        center = Offset(size.width * 0.5f, size.height * 0.38f),
+                        radius = size.maxDimension * 0.65f,
                     )
-                )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(NeonPurple.copy(alpha = if (isDark) 0.10f else 0.16f), Color.Transparent),
+                            center = Offset(size.width * 0.85f, size.height * 0.82f),
+                            radius = size.maxDimension * 0.55f,
+                        ),
+                        center = Offset(size.width * 0.85f, size.height * 0.82f),
+                        radius = size.maxDimension * 0.55f,
+                    )
+                }
         )
         content()
     }
@@ -87,7 +108,13 @@ fun GlassCard(
                 ),
                 shape = shape,
             )
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .then(
+                if (onClick != null) {
+                    Modifier
+                        .defaultMinSize(minHeight = 48.dp)
+                        .clickable { onClick() }
+                } else Modifier
+            )
             .padding(18.dp),
         content = content,
     )

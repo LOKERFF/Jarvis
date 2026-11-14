@@ -6,11 +6,8 @@ import android.graphics.RuntimeShader
 import androidx.annotation.RequiresApi
 
 /**
- * AGSL glow layer (Android 13+). It draws a soft, breathing plasma behind the
- * particles. On older versions the orb falls back to a radial-gradient halo in
- * OrbView, so the visual language stays the same.
- *
- * Everything is one full-canvas rect, so the cost is a single draw call.
+ * AGSL glow layer (Android 13+). Draws a breathing plasma aura behind the
+ * 3D particles, expanding and pulsing in lockstep with the orb's reactive state.
  */
 @RequiresApi(33)
 internal class OrbShaderLayer {
@@ -32,6 +29,7 @@ internal class OrbShaderLayer {
         blue: Float,
         glow: Float,
         energy: Float,
+        pulse: Float = 1f,
     ) {
         if (width <= 1f || height <= 1f) return
         shader.setFloatUniform("uSize", width, height)
@@ -39,6 +37,7 @@ internal class OrbShaderLayer {
         shader.setFloatUniform("uColor", red, green, blue)
         shader.setFloatUniform("uGlow", glow.coerceIn(0f, 1f))
         shader.setFloatUniform("uEnergy", energy.coerceIn(0f, 1f))
+        shader.setFloatUniform("uPulse", pulse.coerceIn(0.85f, 1.25f))
         canvas.drawRect(0f, 0f, width, height, paint)
     }
 
@@ -49,20 +48,22 @@ internal class OrbShaderLayer {
             uniform float3 uColor;
             uniform float  uGlow;
             uniform float  uEnergy;
+            uniform float  uPulse;
 
             half4 main(float2 fragCoord) {
                 float2 p = (fragCoord - uSize * 0.5) / min(uSize.x, uSize.y);
                 float r = length(p);
                 float angle = atan(p.y, p.x);
-                float wobble = 0.018 * sin(uTime * 0.9 + angle * 3.0)
-                             + 0.010 * sin(uTime * 1.7 - angle * 5.0);
-                float core = smoothstep(0.42 + wobble, 0.02, r);
-                float halo = exp(-r * 2.7) * (0.45 + 0.55 * uGlow);
-                float ringRadius = 0.30 + wobble;
-                float ring = exp(-pow((r - ringRadius) * 15.0, 2.0)) * (0.15 + 0.55 * uEnergy);
-                float a = clamp(core * 0.55 + halo * 0.45 + ring * 0.55, 0.0, 1.0);
+                float wobble = (0.014 + 0.016 * uEnergy) * sin(uTime * (0.9 + uEnergy * 1.8) + angle * 3.0)
+                             + 0.010 * cos(uTime * 1.9 - angle * 5.0);
+                float scaledR = r / max(uPulse, 0.85);
+                float core = smoothstep(0.42 + wobble, 0.02, scaledR);
+                float halo = exp(-scaledR * (2.6 - 0.3 * uEnergy)) * (0.45 + 0.55 * uGlow);
+                float ringRadius = 0.31 * uPulse + wobble;
+                float ring = exp(-pow((r - ringRadius) * 16.0, 2.0)) * (0.16 + 0.60 * uEnergy);
+                float a = clamp(core * 0.55 + halo * 0.45 + ring * 0.58, 0.0, 1.0);
                 a = a * (0.45 + 0.55 * uGlow);
-                float3 col = uColor * (0.45 + a * 1.1);
+                float3 col = uColor * (0.45 + a * 1.15);
                 return half4(half(col.r), half(col.g), half(col.b), half(a));
             }
         """

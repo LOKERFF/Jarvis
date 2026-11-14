@@ -87,8 +87,9 @@ class SecureStore(context: Context) {
     }
 
     fun keystoreReady(): Boolean = try {
-        secretKey() != null
-    } catch (t: Throwable) {
+        secretKey()
+        true
+    } catch (_: Throwable) {
         false
     }
 

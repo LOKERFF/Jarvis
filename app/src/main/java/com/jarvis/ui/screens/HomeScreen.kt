@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Build
@@ -43,7 +44,6 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
@@ -214,7 +214,17 @@ fun HomeScreen(
                             else -> "LOCAL MODE" to WarningAmber
                         }
                         StatusChip(text = label, color = color, filled = true)
-                        StatusChip(text = model.take(22), color = NeonPurple)
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable {
+                                    onOpenSection(
+                                        if (vm.hasApiKey) SettingsSection.AI_MODELS else SettingsSection.API_KEYS
+                                    )
+                                }
+                        ) {
+                            StatusChip(text = model.take(22), color = NeonPurple)
+                        }
                     }
                 }
                 if (state.messages.isNotEmpty()) {
@@ -295,10 +305,11 @@ fun HomeScreen(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                // Keep the glowing center particle sphere untouched at the heart!
+                // Keep the glowing center particle sphere at the heart with reactive pulse frequencies
                 JarvisOrb(
                     spec = spec,
                     state = state.orb,
+                    micLevel = micLevel,
                     modifier = Modifier
                         .align(Alignment.Center)
                         .widthIn(max = 360.dp)
@@ -465,15 +476,20 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(text = "Sun raha hoon…", color = accent, fontSize = 12.sp)
                     } else {
-                        Text(
-                            text = state.status.ifBlank {
+                        val dynamicStatus = when (state.orb) {
+                            OrbState.THINKING -> state.status.ifBlank { "Gemini ($model) process kar raha hai…" }
+                            OrbState.SPEAKING -> state.status.ifBlank { "Jarvis bol raha hai…" }
+                            else -> state.status.ifBlank {
                                 if (state.messages.isEmpty()) {
                                     "Orb pe tap karo, ya \"Jarvis\" bolo · 3D orbit drag karein"
                                 } else {
                                     "Sab rokne ke liye orb ko long press karo."
                                 }
-                            },
-                            color = TextMuted,
+                            }
+                        }
+                        Text(
+                            text = dynamicStatus,
+                            color = if (state.orb == OrbState.THINKING) NeonPurple else TextMuted,
                             fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -512,13 +528,13 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         IconButton(
                             onClick = { vm.clearAttachment() },
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Close,
                                 contentDescription = "Attachment hatao",
                                 tint = TextMuted,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(18.dp),
                             )
                         }
                     }
@@ -561,7 +577,7 @@ fun HomeScreen(
                                 modifier = Modifier.testTag("send_button"),
                             ) {
                                 Icon(
-                                    imageVector = Icons.Filled.Send,
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
                                     contentDescription = "Bhejo",
                                     tint = if (input.isBlank()) TextMuted else accent,
                                 )

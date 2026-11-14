@@ -17,6 +17,9 @@ import com.jarvis.domain.orb.OrbSpec
 /** The user-picked accent (Settings > Appearance), available everywhere. */
 val LocalAccent = staticCompositionLocalOf { NeonBlue }
 
+/** True when dark mode is active, false for Light glassmorphic mode. */
+val LocalIsDark = staticCompositionLocalOf { true }
+
 val JarvisTypography = androidx.compose.material3.Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -101,22 +104,25 @@ fun JarvisTheme(
         )
     } else {
         lightColorScheme(
-            primary = Color(0xFF00677A),
-            onPrimary = Color.White,
+            primary = accent,
+            onPrimary = Color(0xFF04070C),
             secondary = Color(0xFF6B21A8),
             onSecondary = Color.White,
-            background = Color(0xFFF4F7FB),
-            onBackground = Color(0xFF0B1220),
-            surface = Color(0xFFFFFFFF),
-            onSurface = Color(0xFF0B1220),
-            surfaceVariant = Color(0xFFE6ECF5),
-            onSurfaceVariant = Color(0xFF404B60),
-            error = Color(0xFFB3261E),
-            outline = Color(0x33000000),
+            background = Color(0xFF0E1729),
+            onBackground = TextPrimary,
+            surface = Color(0xFF16223A),
+            onSurface = TextPrimary,
+            surfaceVariant = Color(0xFF1E2D4B),
+            onSurfaceVariant = TextSecondary,
+            error = DangerRed,
+            outline = GlassBorder,
         )
     }
 
-    CompositionLocalProvider(LocalAccent provides accent) {
+    CompositionLocalProvider(
+        LocalAccent provides accent,
+        LocalIsDark provides dark,
+    ) {
         MaterialTheme(
             colorScheme = scheme,
             typography = JarvisTypography,

@@ -565,7 +565,7 @@ fun SecurityScreen(onBack: () -> Unit) {
 fun AboutScreen(onBack: () -> Unit) {
     SettingsPage(
         title = "About JARVIS",
-        subtitle = "Phase 1 · Foundation",
+        subtitle = "v${BuildConfig.VERSION_NAME} · 3D Reactive Core",
         onBack = onBack,
     ) {
         GlassCard {
@@ -576,10 +576,10 @@ fun AboutScreen(onBack: () -> Unit) {
                 letterSpacing = 6.sp,
             )
             Spacer(modifier = Modifier.height(6.dp))
-            InfoRow("Version", BuildConfig.VERSION_NAME)
+            InfoRow("Version", "${BuildConfig.VERSION_NAME} (v${BuildConfig.VERSION_CODE})")
             InfoRow("Build", if (BuildConfig.DEBUG) "debug" else "release")
-            InfoRow("Phase", "1 of 5 — foundation")
-            InfoRow("Storage", "on-device only")
+            InfoRow("Core", "Reactive 3D Orb + Multi-Voice + Multi-Model Gemini")
+            InfoRow("Storage", "On-device Encrypted Room + Keystore")
         }
 
         GlassCard {
@@ -598,20 +598,18 @@ fun AboutScreen(onBack: () -> Unit) {
         GlassCard {
             CardTitle("Honest Notes & Limits")
             Spacer(modifier = Modifier.height(8.dp))
-            BulletLine("Wake word abhi Android speech recogniser use karta hai jab app khuli ho.")
+            BulletLine("Wake word Android speech recogniser use karta hai jab app khuli ho.")
             BulletLine("Play Integrity token bina backend server ke on-device verify nahi ho sakta.")
-            BulletLine("Google Sign-In ke liye apni OAuth client ID chahiye; bina uske Guest Mode chalta hai.")
+            BulletLine("Google Sign-In optional hai — bina uske Guest Mode me sab chalta hai.")
             BulletLine("In-app Terminal app ke private sandbox folder me chalta hai.")
-            BulletLine("App UI aur voice responses Hinglish me tuned hain.")
+            BulletLine("App UI aur multi-voice TTS Hinglish + Hindi + English me tuned hain.")
         }
 
         GlassCard {
-            CardTitle("Next phases")
+            CardTitle("Roadmap")
             Spacer(modifier = Modifier.height(8.dp))
-            InfoRow("Phase 2", "Always-on service, Vosk wake word, terminal")
-            InfoRow("Phase 3", "Phone control, WhatsApp, calls, privacy mode")
-            InfoRow("Phase 4", "Browser agent, custom providers, multi-agent, coding")
-            InfoRow("Phase 5", "Automation, vision, memory, Instagram, dashboard")
+            InfoRow("v2 Active", "3D Reactive Orb, Multi-Awaaz, Multi-Model Gemini, Self-Setup & Learning")
+            InfoRow("Next", "Always-on foreground wake word, accessibility control, browser & agents")
         }
     }
 }

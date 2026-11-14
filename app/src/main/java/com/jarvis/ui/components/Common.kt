@@ -159,7 +159,7 @@ fun ErrorBanner(message: String, onDismiss: () -> Unit, modifier: Modifier = Mod
         )
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .clickable { onDismiss() },
             contentAlignment = Alignment.Center,
@@ -168,7 +168,7 @@ fun ErrorBanner(message: String, onDismiss: () -> Unit, modifier: Modifier = Mod
                 imageVector = Icons.Filled.Close,
                 contentDescription = "Dismiss",
                 tint = Color(0xFFFFC9C9),
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(18.dp),
             )
         }
     }

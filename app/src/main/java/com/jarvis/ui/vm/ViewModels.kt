@@ -215,7 +215,8 @@ class SetupViewModel : ViewModel() {
                     )
                     return@launch
                 }
-                val ids = models.map { it.id }
+                val ids = (models.map { it.id } + com.jarvis.data.prefs.AppPreferences.DEFAULT_MODELS)
+                    .distinct()
                 prefs.setAvailableModels(ids)
 
                 val chosen = pickDefaultModel(ids, prefs.selectedModel.value)

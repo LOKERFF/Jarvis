@@ -2,11 +2,11 @@ package com.jarvis.ui.components
 
 import android.graphics.Paint
 import android.os.Build
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -15,19 +15,22 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -35,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.jarvis.domain.model.OrbState
 import com.jarvis.domain.orb.OrbGeometry
 import com.jarvis.domain.orb.OrbSpec
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
@@ -44,42 +48,76 @@ import kotlin.math.sin
 private const val MAX_PARTICLES = 8000
 
 /**
- * The orb.
+ * Reactive 3D Particle Orb.
  *
- * - thousands of particles on a parametric surface, drawn with three depth
- *   buckets so it looks volumetric without per-particle gradients;
- * - AGSL plasma glow on Android 13+, radial-gradient halo before that;
- * - every OrbSpec field animates over 0.8 s, and a shape change morphs the
- *   outgoing cloud into the incoming one;
- * - the animation state follows the engine: idle / listening / thinking /
- *   speaking / error.
- *
- * Implemented entirely in Compose Canvas so no GL context or extra permission
- * is needed.
+ * Smoothly adapts pulse frequency, orbital sweep speed, and per-particle wave
+ * displacement based on live [OrbState] ('listening', 'thinking', 'speaking',
+ * 'error', 'idle') and live microphone amplitude [micLevel].
  */
 @Composable
 fun JarvisOrb(
     spec: OrbSpec,
     state: OrbState,
     modifier: Modifier = Modifier,
+    micLevel: Float = 0f,
     onTap: () -> Unit = {},
     onLongPress: () -> Unit = {},
 ) {
     val targetColor = Color(OrbSpec.colorInt(spec.color))
     val sizeScale by animateFloatAsState(
-        targetValue = spec.size, animationSpec = tween(800), label = "orb-size"
+        targetValue = spec.size, animationSpec = tween(700), label = "orb-size"
     )
     val glow by animateFloatAsState(
-        targetValue = spec.glow, animationSpec = tween(800), label = "orb-glow"
+        targetValue = spec.glow, animationSpec = tween(700), label = "orb-glow"
     )
     val spin by animateFloatAsState(
-        targetValue = spec.rotationSpeed, animationSpec = tween(800), label = "orb-spin"
+        targetValue = spec.rotationSpeed, animationSpec = tween(700), label = "orb-spin"
     )
     val countTarget by animateFloatAsState(
-        targetValue = spec.particleCount.toFloat(), animationSpec = tween(800), label = "orb-count"
+        targetValue = spec.particleCount.toFloat(), animationSpec = tween(700), label = "orb-count"
     )
     val color by animateColorAsState(
-        targetValue = targetColor, animationSpec = tween(800), label = "orb-color"
+        targetValue = targetColor, animationSpec = tween(700), label = "orb-color"
+    )
+
+    // Smoothly interpolated reactive state targets so transitions never snap abruptly.
+    val targetPulseFreq = when (state) {
+        OrbState.IDLE -> 1.5f
+        OrbState.LISTENING -> 5.2f
+        OrbState.THINKING -> 3.4f
+        OrbState.SPEAKING -> 9.0f
+        OrbState.ERROR -> 16.0f
+    }
+    val targetPulseAmp = when (state) {
+        OrbState.IDLE -> 0.014f
+        OrbState.LISTENING -> 0.036f
+        OrbState.THINKING -> 0.024f
+        OrbState.SPEAKING -> 0.038f
+        OrbState.ERROR -> 0.055f
+    }
+    val targetEnergy = when (state) {
+        OrbState.IDLE -> 0.22f
+        OrbState.LISTENING -> 0.85f
+        OrbState.THINKING -> 0.68f
+        OrbState.SPEAKING -> 0.95f
+        OrbState.ERROR -> 1.0f
+    }
+    val targetSpinMult = when (state) {
+        OrbState.IDLE -> 1.0f
+        OrbState.LISTENING -> 1.38f
+        OrbState.THINKING -> 3.10f
+        OrbState.SPEAKING -> 1.75f
+        OrbState.ERROR -> 2.30f
+    }
+
+    val pulseFreq by animateFloatAsState(targetPulseFreq, tween(450), label = "orb-freq")
+    val pulseAmp by animateFloatAsState(targetPulseAmp, tween(450), label = "orb-amp")
+    val energy by animateFloatAsState(targetEnergy, tween(450), label = "orb-energy")
+    val spinMult by animateFloatAsState(targetSpinMult, tween(500), label = "orb-spin-mult")
+    val smoothMic by animateFloatAsState(
+        targetValue = if (state == OrbState.LISTENING) micLevel.coerceIn(0f, 1f) else 0f,
+        animationSpec = tween(140),
+        label = "orb-mic",
     )
 
     val particleCount = countTarget.roundToInt().coerceIn(500, MAX_PARTICLES)
@@ -104,13 +142,20 @@ fun JarvisOrb(
         }
     }
 
-    // Frame clock. Read inside the draw scope, so a new frame only repaints.
-    val timeState = remember { mutableStateOf(0f) }
+    // Continuous phase accumulators so changing pulse frequency never causes phase jumps.
+    val timeState = remember { mutableFloatStateOf(0f) }
+    val pulsePhaseState = remember { mutableFloatStateOf(0f) }
+    val currentPulseFreq by rememberUpdatedState(pulseFreq)
+
     LaunchedEffect(Unit) {
-        val start = withFrameNanos { it }
+        var lastNanos = withFrameNanos { it }
+        val startNanos = lastNanos
         while (true) {
             withFrameNanos { now ->
-                timeState.value = (now - start) / 1_000_000_000f
+                val dt = ((now - lastNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                lastNanos = now
+                timeState.floatValue = (now - startNanos) / 1_000_000_000f
+                pulsePhaseState.floatValue += dt * currentPulseFreq
             }
         }
     }
@@ -136,7 +181,9 @@ fun JarvisOrb(
 
     Canvas(
         modifier = modifier
-            .semantics { contentDescription = "Jarvis 3D orb. Bolne ke liye tap karo, sab rokne ke liye long press karo." }
+            .semantics {
+                contentDescription = "Jarvis 3D orb. Bolne ke liye tap karo, sab rokne ke liye long press karo."
+            }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTap() },
@@ -163,7 +210,8 @@ fun JarvisOrb(
                 )
             }
     ) {
-        val time = timeState.value
+        val time = timeState.floatValue
+        val phase = pulsePhaseState.floatValue
         val width = size.width
         val height = size.height
         if (width <= 1f || height <= 1f) return@Canvas
@@ -171,29 +219,24 @@ fun JarvisOrb(
         val center = Offset(width / 2f, height / 2f)
         val baseRadius = min(width, height) * 0.5f * 0.80f * sizeScale
 
-        val pulse = when (state) {
-            OrbState.LISTENING -> 1f + 0.045f * sin(time * 6.5f)
-            OrbState.THINKING -> 1f + 0.020f * sin(time * 3.2f)
-            OrbState.SPEAKING -> 1f + 0.030f * sin(time * 9.0f)
-            OrbState.ERROR -> 1f + 0.060f * sin(time * 22f)
-            OrbState.IDLE -> 1f + 0.012f * sin(time * 1.6f)
+        // Composite reactive pulse curve tailored per Jarvis activity state.
+        val harmonic = when (state) {
+            OrbState.SPEAKING -> 0.72f * sin(phase) + 0.28f * sin(phase * 2.15f)
+            OrbState.THINKING -> 0.80f * sin(phase) + 0.20f * cos(phase * 1.5f)
+            else -> sin(phase)
         }
+        val micLift = smoothMic * 0.065f
+        val pulse = 1f + (pulseAmp + micLift * 0.45f) * harmonic + micLift * 0.35f
         val radius = baseRadius * pulse
 
-        val energy = when (state) {
-            OrbState.LISTENING -> 0.85f
-            OrbState.THINKING -> 0.65f
-            OrbState.SPEAKING -> 0.95f
-            OrbState.ERROR -> 1f
-            OrbState.IDLE -> 0.2f
-        }
         val flicker = if (state == OrbState.ERROR) {
             0.55f + 0.45f * abs(sin(time * 9f))
         } else {
             1f
         }
 
-        // 1) plasma glow (shader on API 33+, gradient everywhere)
+        // 1) Plasma core glow (AGSL shader on API 33+, radial gradient fallback)
+        val effectiveEnergy = (energy + smoothMic * 0.25f).coerceIn(0f, 1f)
         shaderLayer?.let { layer ->
             drawIntoCanvas { canvas ->
                 runCatching {
@@ -206,7 +249,8 @@ fun JarvisOrb(
                         green = color.green,
                         blue = color.blue,
                         glow = glow,
-                        energy = energy,
+                        energy = effectiveEnergy,
+                        pulse = pulse,
                     )
                 }
             }
@@ -215,8 +259,8 @@ fun JarvisOrb(
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        color.copy(alpha = (0.34f * glow + 0.05f) * flicker),
-                        color.copy(alpha = 0.10f * glow * flicker),
+                        color.copy(alpha = (0.36f * glow + 0.05f) * flicker),
+                        color.copy(alpha = 0.12f * glow * flicker),
                         Color.Transparent,
                     ),
                     center = center,
@@ -227,34 +271,73 @@ fun JarvisOrb(
             )
         }
 
-        // 2) listening ring + subtle 3D orbital depth halo
+        // 2) State-reactive orbital rings & Gemini processing arcs
         val orbitAlpha = when (state) {
-            OrbState.LISTENING -> 0.34f
-            OrbState.SPEAKING -> 0.30f
-            OrbState.THINKING -> 0.24f
-            OrbState.ERROR -> 0.28f
+            OrbState.LISTENING -> 0.34f + smoothMic * 0.28f
+            OrbState.SPEAKING -> 0.34f
+            OrbState.THINKING -> 0.28f
+            OrbState.ERROR -> 0.30f
             OrbState.IDLE -> 0.14f
         }
         drawCircle(
-            color = color.copy(alpha = orbitAlpha * flicker),
+            color = color.copy(alpha = orbitAlpha.coerceIn(0f, 1f) * flicker),
             radius = radius * 1.15f,
             center = center,
             style = Stroke(width = 1.dp.toPx()),
         )
-        if (state == OrbState.LISTENING || state == OrbState.SPEAKING) {
-            val ringAlpha = 0.20f + 0.30f * (0.5f + 0.5f * sin(time * 4.5f))
-            drawCircle(
-                color = color.copy(alpha = ringAlpha),
-                radius = radius * 1.28f,
-                center = center,
-                style = Stroke(width = 2.dp.toPx()),
-            )
+
+        when (state) {
+            OrbState.LISTENING -> {
+                val ringScale = 1.24f + smoothMic * 0.12f + 0.03f * sin(phase)
+                val ringAlpha = 0.24f + 0.34f * (0.5f + 0.5f * sin(phase)) + smoothMic * 0.22f
+                drawCircle(
+                    color = color.copy(alpha = ringAlpha.coerceIn(0f, 0.9f)),
+                    radius = radius * ringScale,
+                    center = center,
+                    style = Stroke(width = 2.dp.toPx()),
+                )
+            }
+            OrbState.THINKING -> {
+                val arcRadius = radius * 1.24f
+                val arcSize = Size(arcRadius * 2f, arcRadius * 2f)
+                val arcTopLeft = Offset(center.x - arcRadius, center.y - arcRadius)
+                val sweepStart = (time * 135f) % 360f
+                drawArc(
+                    color = color.copy(alpha = 0.58f),
+                    startAngle = sweepStart,
+                    sweepAngle = 72f,
+                    useCenter = false,
+                    topLeft = arcTopLeft,
+                    size = arcSize,
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                )
+                drawArc(
+                    color = color.copy(alpha = 0.36f),
+                    startAngle = sweepStart + 180f,
+                    sweepAngle = 58f,
+                    useCenter = false,
+                    topLeft = arcTopLeft,
+                    size = arcSize,
+                    style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+                )
+            }
+            OrbState.SPEAKING -> {
+                val outerR = radius * (1.26f + 0.045f * sin(phase * 1.2f))
+                val ringAlpha = 0.22f + 0.32f * (0.5f + 0.5f * sin(phase))
+                drawCircle(
+                    color = color.copy(alpha = ringAlpha.coerceIn(0f, 0.85f)),
+                    radius = outerR,
+                    center = center,
+                    style = Stroke(width = 2.dp.toPx()),
+                )
+            }
+            else -> Unit
         }
 
-        // 3) rotate + project every particle into three depth buckets
-        val yaw = time * spin * speedFactor(state) + dragYaw.value
-        val cosY = cos(yaw).toFloat()
-        val sinY = sin(yaw).toFloat()
+        // 3) Rotate & project every particle into three depth buckets
+        val yaw = time * spin * spinMult + dragYaw.value
+        val cosY = cos(yaw)
+        val sinY = sin(yaw)
         val tilt = 0.32f + dragPitch.value
         val cosX = cos(tilt)
         val sinX = sin(tilt)
@@ -273,18 +356,33 @@ fun JarvisOrb(
             var x = cloud[index]
             var y = cloud[index + 1]
             var z = cloud[index + 2]
-            if (morphing && outgoing != null) {
+            if (morphing) {
                 x = outgoing[index] + (x - outgoing[index]) * morph
                 y = outgoing[index + 1] + (y - outgoing[index + 1]) * morph
                 z = outgoing[index + 2] + (z - outgoing[index + 2]) * morph
             }
 
-            // ripple while speaking
-            if (state == OrbState.SPEAKING) {
-                val ripple = 1f + 0.02f * sin(time * 8f - z * 6f)
-                x *= ripple
-                y *= ripple
-                z *= ripple
+            // State-specific subtle particle surface waves
+            when (state) {
+                OrbState.LISTENING -> {
+                    val acousticWave = 1f + (0.018f + smoothMic * 0.045f) * sin(phase - y * 4.2f)
+                    x *= acousticWave
+                    y *= acousticWave
+                    z *= acousticWave
+                }
+                OrbState.THINKING -> {
+                    val neuralWave = 1f + 0.026f * sin(phase * 1.6f - y * 5.2f + x * 2.5f)
+                    x *= neuralWave
+                    y *= neuralWave
+                    z *= neuralWave
+                }
+                OrbState.SPEAKING -> {
+                    val ripple = 1f + 0.028f * sin(phase * 1.3f - z * 5.5f)
+                    x *= ripple
+                    y *= ripple
+                    z *= ripple
+                }
+                else -> Unit
             }
 
             val rotatedX = x * cosY + z * sinY
@@ -302,12 +400,10 @@ fun JarvisOrb(
                     bufferFront[front++] = screenX
                     bufferFront[front++] = screenY
                 }
-
                 depth >= 0.34f -> {
                     bufferMid[mid++] = screenX
                     bufferMid[mid++] = screenY
                 }
-
                 else -> {
                     bufferBack[back++] = screenX
                     bufferBack[back++] = screenY
@@ -315,7 +411,7 @@ fun JarvisOrb(
             }
         }
 
-        // 4) one native draw call per depth bucket: no per-particle allocation
+        // 4) Draw depth buckets cleanly in three native calls
         drawIntoCanvas { canvas ->
             val native = canvas.nativeCanvas
             if (back > 1) {
@@ -356,14 +452,6 @@ private fun argb(color: Color, alpha: Float): Int {
         (color.green * 255f).toInt().coerceIn(0, 255),
         (color.blue * 255f).toInt().coerceIn(0, 255),
     )
-}
-
-private fun speedFactor(state: OrbState): Float = when (state) {
-    OrbState.THINKING -> 3.2f
-    OrbState.LISTENING -> 1.35f
-    OrbState.SPEAKING -> 1.6f
-    OrbState.ERROR -> 2.2f
-    OrbState.IDLE -> 1f
 }
 
 /** Non-interactive orb used by settings screens. */
