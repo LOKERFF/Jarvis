@@ -84,12 +84,18 @@ jobs:
       - name: Report build failure
         if: failure()
         run: |
-          set -euo pipefail
+          set -uo pipefail
           {
-            echo "### Build failed — tail of build.log"
+            echo "### Build failed (run $GITHUB_RUN_ID, commit $GITHUB_SHA)"
             echo ""
+            echo "**Compiler diagnostics:**"
             echo '```'
-            tail -n 120 build.log 2>/dev/null || echo "(no build.log)"
+            grep -E "^e: |^> Task .*FAILED|FAILURE: |What went wrong|^Caused by: |error:" build.log 2>/dev/null | head -n 200 || true
+            echo '```'
+            echo ""
+            echo "**Tail:**"
+            echo '```'
+            tail -n 40 build.log 2>/dev/null || echo "(no build.log)"
             echo '```'
           } > failure.md
           gh api -X POST "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" \
