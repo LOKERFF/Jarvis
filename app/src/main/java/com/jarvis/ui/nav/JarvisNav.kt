@@ -61,7 +61,10 @@ fun JarvisNavHost(navController: NavHostController = rememberNavController()) {
         }
 
         composable(Routes.SIGN_IN) {
-            SignInScreen(onSignedIn = { resetTo(Routes.INTEGRITY) })
+            SignInScreen(
+                onSignedIn = { resetTo(Routes.INTEGRITY) },
+                onContinueGuest = { resetTo(Routes.PERMISSIONS) },
+            )
         }
 
         composable(Routes.INTEGRITY) {
@@ -77,7 +80,10 @@ fun JarvisNavHost(navController: NavHostController = rememberNavController()) {
         }
 
         composable(Routes.HOME) {
-            HomeScreen(onOpenSettings = { navController.navigate(Routes.SETTINGS) })
+            HomeScreen(
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onOpenSection = { section -> navController.navigate(Routes.section(section.id)) },
+            )
         }
 
         composable(Routes.SETTINGS) {

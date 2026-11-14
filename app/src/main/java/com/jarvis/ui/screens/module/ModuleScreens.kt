@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -31,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -587,16 +589,26 @@ fun TerminalScreen(
             }
         }
 
+        val runTerminalCommand: () -> Unit = {
+            if (command.isNotBlank() && !vm.running) {
+                vm.submit(command)
+                command = ""
+            }
+        }
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = command,
                 onValueChange = { command = it },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("terminal_command_input"),
                 singleLine = true,
                 placeholder = {
                     Text(text = "command likho…", color = TextMuted, fontSize = 13.sp)
                 },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { runTerminalCommand() }),
                 shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = LocalAccent.current.copy(alpha = 0.7f),
@@ -611,10 +623,8 @@ fun TerminalScreen(
             Spacer(modifier = Modifier.width(8.dp))
             GhostButton(
                 text = if (vm.running) "Chal raha…" else "Run",
-                onClick = {
-                    vm.submit(command)
-                    command = ""
-                },
+                onClick = runTerminalCommand,
+                modifier = Modifier.testTag("terminal_run_button"),
                 accent = LocalAccent.current,
             )
         }

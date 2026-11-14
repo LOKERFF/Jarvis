@@ -4,18 +4,23 @@ import android.graphics.Paint
 import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -125,13 +130,36 @@ fun JarvisOrb(
     val bufferMid = remember { FloatArray(MAX_PARTICLES * 2) }
     val bufferBack = remember { FloatArray(MAX_PARTICLES * 2) }
 
+    val dragScope = rememberCoroutineScope()
+    val dragYaw = remember { Animatable(0f) }
+    val dragPitch = remember { Animatable(0f) }
+
     Canvas(
         modifier = modifier
-            .semantics { contentDescription = "Jarvis orb. Tap to speak, long press to stop everything." }
+            .semantics { contentDescription = "Jarvis 3D orb. Bolne ke liye tap karo, sab rokne ke liye long press karo." }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTap() },
                     onLongPress = { onLongPress() },
+                )
+            }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragEnd = {
+                        dragScope.launch { dragYaw.animateTo(0f, spring(stiffness = Spring.StiffnessLow)) }
+                        dragScope.launch { dragPitch.animateTo(0f, spring(stiffness = Spring.StiffnessLow)) }
+                    },
+                    onDragCancel = {
+                        dragScope.launch { dragYaw.animateTo(0f, spring(stiffness = Spring.StiffnessLow)) }
+                        dragScope.launch { dragPitch.animateTo(0f, spring(stiffness = Spring.StiffnessLow)) }
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dragScope.launch {
+                            dragYaw.snapTo((dragYaw.value + dragAmount.x * 0.008f).coerceIn(-1.4f, 1.4f))
+                            dragPitch.snapTo((dragPitch.value + dragAmount.y * 0.006f).coerceIn(-0.85f, 0.85f))
+                        }
+                    },
                 )
             }
     ) {
@@ -199,22 +227,35 @@ fun JarvisOrb(
             )
         }
 
-        // 2) listening ring
-        if (state == OrbState.LISTENING) {
-            val ringAlpha = 0.18f + 0.30f * (0.5f + 0.5f * sin(time * 4f))
+        // 2) listening ring + subtle 3D orbital depth halo
+        val orbitAlpha = when (state) {
+            OrbState.LISTENING -> 0.34f
+            OrbState.SPEAKING -> 0.30f
+            OrbState.THINKING -> 0.24f
+            OrbState.ERROR -> 0.28f
+            OrbState.IDLE -> 0.14f
+        }
+        drawCircle(
+            color = color.copy(alpha = orbitAlpha * flicker),
+            radius = radius * 1.15f,
+            center = center,
+            style = Stroke(width = 1.dp.toPx()),
+        )
+        if (state == OrbState.LISTENING || state == OrbState.SPEAKING) {
+            val ringAlpha = 0.20f + 0.30f * (0.5f + 0.5f * sin(time * 4.5f))
             drawCircle(
                 color = color.copy(alpha = ringAlpha),
-                radius = radius * 1.26f,
+                radius = radius * 1.28f,
                 center = center,
                 style = Stroke(width = 2.dp.toPx()),
             )
         }
 
         // 3) rotate + project every particle into three depth buckets
-        val yaw = time * spin * speedFactor(state)
+        val yaw = time * spin * speedFactor(state) + dragYaw.value
         val cosY = cos(yaw).toFloat()
         val sinY = sin(yaw).toFloat()
-        val tilt = 0.32f
+        val tilt = 0.32f + dragPitch.value
         val cosX = cos(tilt)
         val sinX = sin(tilt)
 

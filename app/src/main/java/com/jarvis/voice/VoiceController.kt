@@ -76,7 +76,7 @@ class VoiceController(
         postNow {
             if (destroyed) return@postNow
             if (!hasMicPermission()) {
-                onError?.invoke("Microphone permission is required for voice.")
+                onError?.invoke("Voice ke liye microphone permission zaroori hai.")
                 return@postNow
             }
             val engine = recognizerOrNull() ?: return@postNow
@@ -130,7 +130,7 @@ class VoiceController(
         if (destroyed) return
         if (!hasMicPermission()) {
             wantHotword = false
-            onError?.invoke("Microphone permission is required for the wake word.")
+            onError?.invoke("Wake word ke liye microphone permission zaroori hai.")
             return
         }
         val engine = recognizerOrNull() ?: return
@@ -148,7 +148,7 @@ class VoiceController(
             false
         }
         if (!available) {
-            onError?.invoke("No speech recognition service found. Install/enable Google speech services.")
+            onError?.invoke("Speech recognition service nahi mili. Google Speech Services enable karo.")
             return null
         }
         recognizer?.let { return it }
@@ -158,7 +158,7 @@ class VoiceController(
                 recognizer = it
             }
         } catch (t: Throwable) {
-            onError?.invoke("Could not start speech recognition: ${t.message ?: "unknown error"}")
+            onError?.invoke("Speech recognition start nahi ho paya: ${t.message ?: "unknown error"}")
             null
         }
     }
@@ -278,13 +278,13 @@ class VoiceController(
             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
                 mode = Mode.OFF
                 wantHotword = false
-                onError?.invoke("Microphone permission is required.")
+                onError?.invoke("Microphone permission zaroori hai.")
             }
 
             SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
                 if (mode == Mode.COMMAND) {
                     mode = Mode.OFF
-                    onError?.invoke("I did not catch that. Tap the orb and try again.")
+                    onError?.invoke("Awaz samajh nahi aayi. Orb pe tap karke phir bolo.")
                     resumeHotword()
                 } else {
                     scheduleRestart(500)
@@ -296,7 +296,7 @@ class VoiceController(
             SpeechRecognizer.ERROR_SERVER -> {
                 if (mode == Mode.COMMAND) {
                     mode = Mode.OFF
-                    onError?.invoke("Speech recognition needs a network connection right now.")
+                    onError?.invoke("Voice input ke liye abhi internet connection zaroori hai.")
                     resumeHotword()
                 } else {
                     // Slow down retries so a dead network does not burn battery.
@@ -312,7 +312,7 @@ class VoiceController(
             else -> {
                 if (mode == Mode.COMMAND) {
                     mode = Mode.OFF
-                    onError?.invoke("Voice input stopped (error $error).")
+                    onError?.invoke("Voice input ruk gaya (error $error).")
                 }
                 scheduleRestart(1200)
             }

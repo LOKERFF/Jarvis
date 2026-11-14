@@ -167,7 +167,7 @@ class JarvisEngine(
                         current.orb == OrbState.ERROR -> OrbState.ERROR
                         else -> OrbState.IDLE
                     },
-                    status = if (listening) "Listening…" else current.status,
+                    status = if (listening) "Sun raha hoon…" else current.status,
                 )
             }
         }
@@ -182,18 +182,18 @@ class JarvisEngine(
 
     fun startListening() {
         if (EmergencyStop.active.value) {
-            _state.update { it.copy(status = "Emergency stop is active. Tap Resume.") }
+            _state.update { it.copy(status = "Emergency stop active hai. Resume pe tap karo.") }
             return
         }
         if (!secure.has(SecureStore.KEY_GEMINI)) {
-            _state.update { it.copy(error = "Add your Gemini API key in Settings › API Keys.") }
+            _state.update { it.copy(error = "Settings › API Keys me apni Gemini API key add karo.") }
             return
         }
         hotwordArmed = false
         voice.stopHotword()
         val started = voice.startCommand()
         if (!started) {
-            _state.update { it.copy(status = "Could not open the microphone.") }
+            _state.update { it.copy(status = "Microphone open nahi ho paya.") }
         }
     }
 
@@ -253,11 +253,11 @@ class JarvisEngine(
         if (text.isEmpty()) return
 
         if (isStopCommand(text)) {
-            emergencyStop("Stopped by voice command.")
+            emergencyStop("Voice command se band kar diya.")
             return
         }
         if (EmergencyStop.active.value) {
-            _state.update { it.copy(status = "Emergency stop is active. Tap Resume to continue.") }
+            _state.update { it.copy(status = "Emergency stop active hai. Aage badhne ke liye Resume dabao.") }
             return
         }
 
@@ -285,7 +285,7 @@ class JarvisEngine(
         val apiKey = secure.get(SecureStore.KEY_GEMINI)
         if (apiKey.isNullOrBlank()) {
             _state.update {
-                it.copy(orb = OrbState.ERROR, error = "Add your Gemini API key in Settings › API Keys.")
+                it.copy(orb = OrbState.ERROR, error = "Settings › API Keys me apni Gemini API key add karo.")
             }
             return
         }
@@ -349,7 +349,7 @@ class JarvisEngine(
             result.fold(
                 onSuccess = { id ->
                     say("Yaad rakh liya, aage se ye nahi karunga. (Note #$id)", speakIt = true)
-                    _state.update { it.copy(status = "Learning note saved") }
+                    _state.update { it.copy(status = "Learning note save ho gaya") }
                     audit.info("LEARN", "correction saved from chat (#$id)")
                 },
                 onFailure = { error ->
@@ -411,9 +411,9 @@ class JarvisEngine(
                 speak(finalText)
             } catch (cancellation: CancellationException) {
                 val message = if (EmergencyStop.active.value) {
-                    EmergencyStop.note.value.ifBlank { "Stopped." }
+                    EmergencyStop.note.value.ifBlank { "Ruk gaya." }
                 } else {
-                    "Stopped."
+                    "Ruk gaya."
                 }
                 _state.update {
                     it.copy(busy = false, orb = OrbState.IDLE, speaking = false, status = message)
@@ -493,11 +493,11 @@ class JarvisEngine(
             )
 
             response.promptFeedback?.blockReason?.let { reason ->
-                throw GeminiException("Gemini blocked this request ($reason).")
+                throw GeminiException("Gemini ne ye request block kar di ($reason).")
             }
 
             val candidate = response.candidates.firstOrNull()
-                ?: throw GeminiException("Gemini returned no answer. Try rephrasing.")
+                ?: throw GeminiException("Gemini se koi jawab nahi aaya. Thoda alag tareeke se pucho.")
 
             val parts = candidate.content?.parts.orEmpty()
             val visibleText = parts
@@ -613,7 +613,7 @@ class JarvisEngine(
 
     // ------------------------------------------------------------ emergency
 
-    fun emergencyStop(reason: String = "Everything stopped by user.") {
+    fun emergencyStop(reason: String = "User ne sab kuch rok diya.") {
         EmergencyStop.engage(reason)
         turnJob?.cancel()
         speechWatchdog?.cancel()
@@ -641,7 +641,7 @@ class JarvisEngine(
 
     fun resume() {
         EmergencyStop.release()
-        _state.update { it.copy(status = "Ready.", error = null) }
+        _state.update { it.copy(status = "Taiyaar hoon.", error = null) }
         audit.info("SAFETY", "emergency stop released")
         rearmHotwordSoon()
     }
@@ -667,7 +667,7 @@ class JarvisEngine(
             notes += note
             true to note
         } catch (t: Throwable) {
-            false to "Could not save the orb settings."
+            false to "Orb settings save nahi ho payi."
         }
     }
 
@@ -677,10 +677,10 @@ class JarvisEngine(
 
     override fun applyModel(requested: String): Pair<Boolean, String> {
         val clean = requested.removePrefix("models/").trim()
-        if (clean.isEmpty()) return false to "No model name was given."
+        if (clean.isEmpty()) return false to "Model ka naam nahi diya gaya."
         val available = prefs.availableModels.value
         if (available.isEmpty()) {
-            return false to "The model list is empty. Open Settings › AI Models and tap Refresh."
+            return false to "Model list khali hai. Settings › AI Models me jaakar Refresh dabao."
         }
         val match = available.firstOrNull { it.equals(clean, ignoreCase = true) }
             ?: available.firstOrNull { it.endsWith(clean, ignoreCase = true) }

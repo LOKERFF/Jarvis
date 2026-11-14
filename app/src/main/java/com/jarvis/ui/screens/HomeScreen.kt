@@ -1,5 +1,12 @@
 package com.jarvis.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +16,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -26,13 +35,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -49,11 +62,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.core.ArtifactIntents
@@ -61,27 +78,30 @@ import com.jarvis.core.EmergencyStop
 import com.jarvis.core.ServiceLocator
 import com.jarvis.data.prefs.AppPreferences
 import com.jarvis.domain.model.OrbState
-import com.jarvis.domain.orb.OrbSpec
 import com.jarvis.ui.components.ChatBubble
 import com.jarvis.ui.components.ErrorBanner
 import com.jarvis.ui.components.JarvisOrb
 import com.jarvis.ui.components.MicLevelBars
+import com.jarvis.ui.nav.SettingsSection
 import com.jarvis.ui.screens.setup.SetupProgressSheet
 import com.jarvis.ui.theme.DangerRed
+import com.jarvis.ui.theme.GhostButton
+import com.jarvis.ui.theme.Glass3DDepthCard
+import com.jarvis.ui.theme.JarvisBackground
 import com.jarvis.ui.theme.LocalAccent
 import com.jarvis.ui.theme.NeonPurple
 import com.jarvis.ui.theme.StatusChip
+import com.jarvis.ui.theme.SuccessGreen
 import com.jarvis.ui.theme.TextMuted
 import com.jarvis.ui.theme.TextPrimary
-import com.jarvis.ui.theme.GhostButton
-import com.jarvis.ui.theme.JarvisBackground
-import com.jarvis.ui.vm.ChatViewModel
-import com.jarvis.ui.theme.SuccessGreen
+import com.jarvis.ui.theme.TextSecondary
 import com.jarvis.ui.theme.WarningAmber
+import com.jarvis.ui.vm.ChatViewModel
 
 @Composable
 fun HomeScreen(
     onOpenSettings: () -> Unit,
+    onOpenSection: (SettingsSection) -> Unit = {},
     vm: ChatViewModel = viewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -89,6 +109,9 @@ fun HomeScreen(
     val micLevel by vm.micLevel.collectAsStateWithLifecycle()
     val continuous by vm.continuousMode.collectAsStateWithLifecycle()
     val model by vm.selectedModel.collectAsStateWithLifecycle()
+    val temperature by vm.temperature.collectAsStateWithLifecycle()
+    val savedSetupsCount by vm.savedSetupsCount.collectAsStateWithLifecycle()
+    val memoryNotesCount by vm.memoryNotesCount.collectAsStateWithLifecycle()
 
     val setup by vm.setupState.collectAsStateWithLifecycle()
     val emergency by EmergencyStop.active.collectAsStateWithLifecycle()
@@ -96,9 +119,32 @@ fun HomeScreen(
     val integrity by ServiceLocator.prefs.integrityStatus.collectAsStateWithLifecycle()
 
     var input by remember { mutableStateOf("") }
+    var hudExpanded by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
     val accent = LocalAccent.current
     val context = LocalContext.current
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            vm.onOrbTap()
+        } else {
+            vm.reportError("Bolne ke liye microphone permission zaroori hai. App settings me allow karo.")
+        }
+    }
+
+    val handleVoiceTrigger: () -> Unit = {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            vm.onOrbTap()
+        } else {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     // Module: attach any file. SAF gives us a read handle, so no storage
     // permission is ever requested.
@@ -122,6 +168,7 @@ fun HomeScreen(
 
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
+            hudExpanded = false
             runCatching { listState.animateScrollToItem(0) }
         }
     }
@@ -134,6 +181,8 @@ fun HomeScreen(
         }
     }
 
+    val showFullHud = hudExpanded || state.messages.isEmpty()
+
     JarvisBackground {
         Column(
             modifier = Modifier
@@ -145,52 +194,76 @@ fun HomeScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 18.dp, end = 8.dp, top = 10.dp, bottom = 4.dp),
+                    .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "JARVIS",
                         color = accent,
-                        fontSize = 22.sp,
+                        fontSize = 21.sp,
                         letterSpacing = 7.sp,
                         fontWeight = FontWeight.Light,
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val (label, color) = when {
-                            limited -> "LIMITED MODE" to WarningAmber
+                            limited -> "GUEST MODE" to WarningAmber
                             integrity == AppPreferences.STATUS_VERIFIED -> "VERIFIED" to SuccessGreen
-                            integrity == AppPreferences.STATUS_UNKNOWN -> "CHECK PENDING" to TextMuted
-                            else -> "NOT VERIFIED" to WarningAmber
+                            integrity == AppPreferences.STATUS_UNKNOWN -> "READY" to accent
+                            else -> "LOCAL MODE" to WarningAmber
                         }
                         StatusChip(text = label, color = color, filled = true)
-                        StatusChip(text = model.take(26), color = NeonPurple)
+                        StatusChip(text = model.take(22), color = NeonPurple)
+                    }
+                }
+                if (state.messages.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .testTag("hud_toggle")
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { hudExpanded = !hudExpanded },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        StatusChip(
+                            text = if (showFullHud) "CHAT" else "3D HUD",
+                            color = accent,
+                            filled = showFullHud,
+                        )
                     }
                 }
                 Box(
                     modifier = Modifier
+                        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable { vm.toggleContinuous(!continuous) }
+                        .clickable { vm.toggleContinuous(!continuous) },
+                    contentAlignment = Alignment.Center,
                 ) {
                     StatusChip(
-                        text = if (continuous) "CONT ON" else "CONT OFF",
+                        text = if (continuous) "CONT ON" else "CONT",
                         color = if (continuous) SuccessGreen else TextMuted,
                         filled = continuous,
                     )
                 }
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Box(
                     modifier = Modifier
+                        .testTag("stop_button")
+                        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable { vm.stopEverything() }
+                        .clickable { vm.stopEverything() },
+                    contentAlignment = Alignment.Center,
                 ) {
                     StatusChip(text = "STOP", color = DangerRed, filled = true)
                 }
-                IconButton(onClick = onOpenSettings) {
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.testTag("settings_button"),
+                ) {
                     Icon(
                         imageVector = Icons.Filled.Settings,
-                        contentDescription = "Settings",
+                        contentDescription = "Settings kholo",
                         tint = TextPrimary,
                     )
                 }
@@ -207,7 +280,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Emergency stop is active.",
+                        text = "Emergency stop active hai.",
                         color = WarningAmber,
                         fontSize = 13.sp,
                         modifier = Modifier.weight(1f),
@@ -216,31 +289,146 @@ fun HomeScreen(
                 }
             }
 
-            // ------------------------------------------------- orb + transcript
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            // ---------------------------- center orb + 3D glassmorphic depth cards
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                // Keep the glowing center particle sphere untouched at the heart!
                 JarvisOrb(
                     spec = spec,
                     state = state.orb,
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .padding(horizontal = 20.dp),
-                    onTap = { vm.onOrbTap() },
+                        .widthIn(max = 360.dp)
+                        .fillMaxWidth(0.78f)
+                        .aspectRatio(1f),
+                    onTap = handleVoiceTrigger,
                     onLongPress = { vm.stopEverything() },
                 )
 
-                if (state.messages.isNotEmpty()) {
-                    LazyColumn(
-                        state = listState,
-                        reverseLayout = true,
+                // Top 3D Depth Cards framing the orb
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    val orbStatusText = when (state.orb) {
+                        OrbState.LISTENING -> "SUN RAHA HOON"
+                        OrbState.THINKING -> "SOCH RAHA HOON"
+                        OrbState.SPEAKING -> "BOL RAHA HOON"
+                        OrbState.ERROR -> "ERROR"
+                        OrbState.IDLE -> "3D CORE READY"
+                    }
+                    DepthHudCard(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .fillMaxHeight(0.46f),
-                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                            .weight(1f)
+                            .testTag("card_orb_3d"),
+                        icon = Icons.Filled.AutoAwesome,
+                        badge = "ORB 3D",
+                        title = "${spec.shape.uppercase()} · ${spec.particleCount}",
+                        subtitle = orbStatusText,
+                        accent = accent,
+                        rotationX = -5f,
+                        rotationY = 7f,
+                        onClick = { vm.cycleOrbShape() },
+                        secondaryActionLabel = "Edit",
+                        onSecondaryClick = { onOpenSection(SettingsSection.APPEARANCE) },
+                    )
+
+                    val keyOk = vm.hasApiKey
+                    DepthHudCard(
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("card_ai_brain"),
+                        icon = Icons.Filled.Psychology,
+                        badge = if (keyOk) "KEY READY" else "KEY MISSING",
+                        title = model.removePrefix("models/").take(18),
+                        subtitle = "Temp ${"%.1f".format(temperature)} · Gemini",
+                        accent = if (keyOk) NeonPurple else WarningAmber,
+                        rotationX = -5f,
+                        rotationY = -7f,
+                        onClick = {
+                            onOpenSection(
+                                if (keyOk) SettingsSection.AI_MODELS else SettingsSection.API_KEYS
+                            )
+                        },
+                    )
+                }
+
+                // Bottom 3D Depth Cards when HUD is active (animates out smoothly during chat view)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showFullHud,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
                     ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            DepthHudCard(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("card_self_setup"),
+                                icon = Icons.Filled.Build,
+                                badge = "SELF SETUP",
+                                title = "$savedSetupsCount Saved",
+                                subtitle = "File attach + setup kar lo",
+                                accent = SuccessGreen,
+                                rotationX = 5f,
+                                rotationY = 7f,
+                                onClick = { onOpenSection(SettingsSection.SAVED_SETUPS) },
+                            )
+
+                            DepthHudCard(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("card_memory_terminal"),
+                                icon = Icons.Filled.Memory,
+                                badge = "MEMORY",
+                                title = "$memoryNotesCount Rules Yaad",
+                                subtitle = "Terminal & Encrypted Notes",
+                                accent = accent,
+                                rotationX = 5f,
+                                rotationY = -7f,
+                                onClick = { onOpenSection(SettingsSection.MEMORY) },
+                                secondaryActionLabel = "Shell",
+                                secondaryIcon = Icons.Filled.Terminal,
+                                onSecondaryClick = { onOpenSection(SettingsSection.TERMINAL) },
+                            )
+                        }
+                    }
+                }
+
+                // Chat transcript overlay when messages exist and HUD isn't pinned open
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.50f),
+                ) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = state.messages.isNotEmpty() && !showFullHud,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        LazyColumn(
+                            state = listState,
+                            reverseLayout = true,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                         items(state.messages.asReversed(), key = { it.id }) { message ->
                             ChatBubble(
                                 message = message,
@@ -261,6 +449,7 @@ fun HomeScreen(
                         }
                     }
                 }
+                }
             }
 
             // ---------------------------------------------------------- footer
@@ -272,18 +461,20 @@ fun HomeScreen(
                     if (state.listening) {
                         MicLevelBars(level = micLevel, active = true)
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text(text = "Listening…", color = accent, fontSize = 12.sp)
+                        Text(text = "Sun raha hoon…", color = accent, fontSize = 12.sp)
                     } else {
                         Text(
                             text = state.status.ifBlank {
                                 if (state.messages.isEmpty()) {
-                                    "Tap the orb, or say \"Jarvis\"."
+                                    "Orb pe tap karo, ya \"Jarvis\" bolo · 3D orbit drag karein"
                                 } else {
-                                    "Long press the orb to stop everything."
+                                    "Sab rokne ke liye orb ko long press karo."
                                 }
                             },
                             color = TextMuted,
                             fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -309,6 +500,7 @@ fun HomeScreen(
                             fontSize = 12.sp,
                             modifier = Modifier.weight(1f),
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = "setup kar lo",
@@ -316,14 +508,17 @@ fun HomeScreen(
                             fontSize = 10.sp,
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = "Remove attachment",
-                            tint = TextMuted,
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clickable { vm.clearAttachment() },
-                        )
+                        IconButton(
+                            onClick = { vm.clearAttachment() },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Attachment hatao",
+                                tint = TextMuted,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
                     }
                 }
 
@@ -336,10 +531,11 @@ fun HomeScreen(
                     IconButton(
                         onClick = { filePicker.launch(arrayOf("*/*")) },
                         enabled = !state.busy,
+                        modifier = Modifier.testTag("attach_button"),
                     ) {
                         Icon(
                             imageVector = Icons.Filled.AttachFile,
-                            contentDescription = "Attach a file",
+                            contentDescription = "File attach karo",
                             tint = if (state.attachment != null) accent else TextMuted,
                         )
                     }
@@ -347,19 +543,24 @@ fun HomeScreen(
                     OutlinedTextField(
                         value = input,
                         onValueChange = { input = it },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("chat_input"),
                         singleLine = true,
                         shape = RoundedCornerShape(22.dp),
                         placeholder = {
-                            Text(text = "Ask Jarvis…", color = TextMuted, fontSize = 14.sp)
+                            Text(text = "Jarvis se pucho…", color = TextMuted, fontSize = 14.sp)
                         },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = { sendInput() }),
                         trailingIcon = {
-                            IconButton(onClick = sendInput) {
+                            IconButton(
+                                onClick = sendInput,
+                                modifier = Modifier.testTag("send_button"),
+                            ) {
                                 Icon(
                                     imageVector = Icons.Filled.Send,
-                                    contentDescription = "Send",
+                                    contentDescription = "Bhejo",
                                     tint = if (input.isBlank()) TextMuted else accent,
                                 )
                             }
@@ -379,7 +580,8 @@ fun HomeScreen(
 
                     Box(
                         modifier = Modifier
-                            .size(54.dp)
+                            .testTag("mic_button")
+                            .size(52.dp)
                             .clip(CircleShape)
                             .background(
                                 Brush.linearGradient(
@@ -389,12 +591,12 @@ fun HomeScreen(
                                     )
                                 )
                             )
-                            .clickable { vm.onOrbTap() },
+                            .clickable { handleVoiceTrigger() },
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Mic,
-                            contentDescription = if (state.listening) "Stop listening" else "Talk to Jarvis",
+                            contentDescription = if (state.listening) "Sunna band karo" else "Jarvis se baat karo",
                             tint = Color(0xFF04070C),
                         )
                     }
@@ -409,6 +611,96 @@ fun HomeScreen(
             onConfirm = { approved -> vm.confirmSetup(approved) },
             onCancel = { vm.cancelSetup() },
             onDismiss = { vm.dismissSetupReport() },
+        )
+    }
+}
+
+@Composable
+private fun DepthHudCard(
+    icon: ImageVector,
+    badge: String,
+    title: String,
+    subtitle: String,
+    accent: Color,
+    rotationX: Float,
+    rotationY: Float,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    secondaryActionLabel: String? = null,
+    secondaryIcon: ImageVector = Icons.Filled.Layers,
+    onSecondaryClick: (() -> Unit)? = null,
+) {
+    Glass3DDepthCard(
+        modifier = modifier,
+        accent = accent,
+        rotationX = rotationX,
+        rotationY = rotationY,
+        onClick = onClick,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = badge,
+                    tint = accent,
+                    modifier = Modifier.size(15.dp),
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = badge,
+                    color = accent,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp,
+                    maxLines = 1,
+                )
+            }
+            if (secondaryActionLabel != null && onSecondaryClick != null) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(accent.copy(alpha = 0.16f))
+                        .clickable { onSecondaryClick() }
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = secondaryIcon,
+                        contentDescription = secondaryActionLabel,
+                        tint = accent,
+                        modifier = Modifier.size(11.dp),
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = secondaryActionLabel,
+                        color = accent,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = title,
+            color = TextPrimary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = subtitle,
+            color = TextSecondary,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

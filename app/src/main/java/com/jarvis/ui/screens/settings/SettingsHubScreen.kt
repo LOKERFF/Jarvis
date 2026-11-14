@@ -53,7 +53,7 @@ fun SettingsHubScreen(
         ) {
             JarvisTopBar(
                 title = "Settings",
-                subtitle = "${SettingsSection.entries.size} sections · Phase 1 + module live",
+                subtitle = "${SettingsSection.entries.size} sections · Self-Setup + 3D Orb live",
                 onBack = onBack,
             )
 
@@ -67,7 +67,7 @@ fun SettingsHubScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = email ?: "Not signed in",
+                                    text = email ?: "Guest Mode (Local)",
                                     color = TextPrimary,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.SemiBold,
@@ -79,7 +79,7 @@ fun SettingsHubScreen(
                                 )
                             }
                             StatusChip(
-                                text = if (limited) "LIMITED" else "GOOGLE",
+                                text = if (limited) "GUEST" else "GOOGLE",
                                 color = if (limited) WarningAmber else accent,
                                 filled = true,
                             )

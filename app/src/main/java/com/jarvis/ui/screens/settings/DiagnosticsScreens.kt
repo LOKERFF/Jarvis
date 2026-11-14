@@ -596,13 +596,13 @@ fun AboutScreen(onBack: () -> Unit) {
         }
 
         GlassCard {
-            CardTitle("Known limitations in Phase 1")
+            CardTitle("Honest Notes & Limits")
             Spacer(modifier = Modifier.height(8.dp))
-            BulletLine("The wake word uses Android's recogniser, not the offline Vosk model yet.")
-            BulletLine("The Play Integrity verdict cannot be read on-device without a server.")
-            BulletLine("Google Sign-In needs your own OAuth client id.")
-            BulletLine("Phone control, WhatsApp, terminal, agents and automation are later phases.")
-            BulletLine("The app UI is English only.")
+            BulletLine("Wake word abhi Android speech recogniser use karta hai jab app khuli ho.")
+            BulletLine("Play Integrity token bina backend server ke on-device verify nahi ho sakta.")
+            BulletLine("Google Sign-In ke liye apni OAuth client ID chahiye; bina uske Guest Mode chalta hai.")
+            BulletLine("In-app Terminal app ke private sandbox folder me chalta hai.")
+            BulletLine("App UI aur voice responses Hinglish me tuned hain.")
         }
 
         GlassCard {

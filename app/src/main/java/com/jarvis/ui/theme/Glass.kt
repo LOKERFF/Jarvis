@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,18 +28,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Glassmorphism kit: dark neon theme with frosted cards.
- * Compose cannot blur what is behind a composable in a cheap way, so the glass
- * effect is built from a translucent gradient plus a 1dp light border, which
- * reads the same on screen and costs almost nothing.
+ * Glassmorphism kit: dark neon theme with frosted cards + 3D depth cards.
+ * Compose builds true 3D perspective using graphicsLayer rotationX/rotationY,
+ * cameraDistance, specular rim borders, and corner ambient sheen.
  */
 
 @Composable
@@ -53,8 +57,8 @@ fun JarvisBackground(modifier: Modifier = Modifier, content: @Composable BoxScop
                 .fillMaxSize()
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(LocalAccent.current.copy(alpha = 0.10f), Color.Transparent),
-                        radius = 900f,
+                        colors = listOf(LocalAccent.current.copy(alpha = 0.12f), Color.Transparent),
+                        radius = 960f,
                     )
                 )
         )
@@ -85,6 +89,68 @@ fun GlassCard(
             )
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(18.dp),
+        content = content,
+    )
+}
+
+@Composable
+fun Glass3DDepthCard(
+    modifier: Modifier = Modifier,
+    accent: Color = LocalAccent.current,
+    rotationX: Float = 0f,
+    rotationY: Float = 0f,
+    elevation: Dp = 14.dp,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val shape = RoundedCornerShape(22.dp)
+    Column(
+        modifier = modifier
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .graphicsLayer {
+                this.rotationX = rotationX
+                this.rotationY = rotationY
+                this.cameraDistance = 14f * density
+                this.shadowElevation = elevation.toPx()
+                this.shape = shape
+                this.clip = true
+                this.ambientShadowColor = accent.copy(alpha = 0.45f)
+                this.spotShadowColor = accent.copy(alpha = 0.55f)
+            }
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFF162038).copy(alpha = 0.86f),
+                        Color(0xFF0A1020).copy(alpha = 0.78f),
+                    )
+                )
+            )
+            .drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(accent.copy(alpha = 0.18f), Color.Transparent),
+                        center = Offset(size.width * 0.18f, size.height * 0.15f),
+                        radius = size.maxDimension * 0.85f,
+                    ),
+                    center = Offset(size.width * 0.18f, size.height * 0.15f),
+                    radius = size.maxDimension * 0.85f,
+                )
+            }
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        accent.copy(alpha = 0.65f),
+                        Color.White.copy(alpha = 0.22f),
+                        GlassBorder.copy(alpha = 0.20f),
+                    ),
+                    start = Offset.Zero,
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
+                ),
+                shape = shape,
+            )
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         content = content,
     )
 }

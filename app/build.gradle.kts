@@ -32,7 +32,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.jarvis"
+        applicationId = "com.aistudio.jarvis.k7m4x2"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -43,6 +43,12 @@ android {
     }
 
     signingConfigs {
+        create("debugConfig") {
+            storeFile = file("${rootDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         if (keystoreProperties.isNotEmpty()) {
             create("release") {
                 storeFile = rootProject.file(keystoreProperties.getProperty("storeFile", "jarvis-release.jks"))
@@ -57,6 +63,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debugConfig")
         }
         release {
             isMinifyEnabled = true

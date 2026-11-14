@@ -114,8 +114,8 @@ fun ArtifactCard(
                 )
                 Text(
                     text = when {
-                        !exists -> "File missing from app storage"
-                        artifact.isVideo -> "Video · tap play to watch here"
+                        !exists -> "File app storage me nahi mili"
+                        artifact.isVideo -> "Video · dekhne ke liye Play dabao"
                         else -> sizeLabel(artifact.path)
                     },
                     color = if (exists) TextMuted else TextSecondary,

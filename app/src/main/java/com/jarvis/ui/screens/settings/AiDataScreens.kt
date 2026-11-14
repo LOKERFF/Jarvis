@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
@@ -61,23 +62,23 @@ fun AiModelsScreen(onBack: () -> Unit, vm: ModelsViewModel = viewModel()) {
 
     SettingsPage(
         title = "AI Models",
-        subtitle = "Fetched live from your Gemini key",
+        subtitle = "Aapki Gemini key se live fetch kiye gaye",
         onBack = onBack,
     ) {
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    CardTitle("Model list")
+                    CardTitle("Model List")
                     SettingsHint(
                         if (updatedAt == 0L) {
-                            "Never loaded. Tap Refresh."
+                            "Abhi load nahi hua. Refresh dabao."
                         } else {
                             "Updated ${formatTime(updatedAt)}"
                         }
                     )
                 }
                 GhostButton(
-                    text = if (vm.ui.loading) "Loading…" else "Refresh",
+                    text = if (vm.ui.loading) "Load ho raha…" else "Refresh",
                     onClick = { vm.refresh() },
                     enabled = !vm.ui.loading,
                 )
@@ -93,15 +94,15 @@ fun AiModelsScreen(onBack: () -> Unit, vm: ModelsViewModel = viewModel()) {
         }
 
         GlassCard {
-            CardTitle("Choose a model")
+            CardTitle("Model Chuno")
             Spacer(modifier = Modifier.height(4.dp))
             SettingsHint(
-                "Jarvis may switch models itself with set_model, but only to a name in this list."
+                "Jarvis set_model se khud bhi model badal sakta hai, par sirf isi list me se."
             )
             Spacer(modifier = Modifier.height(10.dp))
             if (models.isEmpty()) {
                 Text(
-                    text = "No models loaded yet. Add your key in API Keys, then tap Refresh.",
+                    text = "Abhi koi model load nahi hua. API Keys me key add karke Refresh dabao.",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
@@ -230,6 +231,16 @@ fun ApiKeysScreen(onBack: () -> Unit, vm: SetupViewModel = viewModel()) {
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
                     ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (newKey.isNotBlank() && !vm.keyUi.loading) {
+                                vm.testAndSaveKey(newKey) {
+                                    replacing = false
+                                    newKey = ""
+                                }
+                            }
+                        }
+                    ),
                     trailingIcon = {
                         Text(
                             text = if (reveal) "hide" else "show",
@@ -250,7 +261,7 @@ fun ApiKeysScreen(onBack: () -> Unit, vm: SetupViewModel = viewModel()) {
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 NeonButton(
-                    text = if (vm.keyUi.loading) "Testing…" else "Test & save",
+                    text = if (vm.keyUi.loading) "Test ho raha hai…" else "Test & Save Karo",
                     onClick = {
                         vm.testAndSaveKey(newKey) {
                             replacing = false

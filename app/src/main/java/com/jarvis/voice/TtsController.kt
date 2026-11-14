@@ -40,7 +40,7 @@ class TtsController(context: Context) {
         }
 
         override fun onError(utteranceId: String?, errorCode: Int) {
-            onError?.invoke("Text to speech error ($errorCode).")
+            onError?.invoke("Text-to-Speech error ($errorCode).")
             onFinished?.invoke()
         }
     }
@@ -57,7 +57,7 @@ class TtsController(context: Context) {
                         speakNow(queued, pendingRate, pendingPitch)
                     }
                 } else {
-                    onError?.invoke("Text to speech is not available on this device.")
+                    onError?.invoke("Is device par Text-to-Speech available nahi hai.")
                 }
             }
         } catch (t: Throwable) {
@@ -126,11 +126,11 @@ class TtsController(context: Context) {
             val id = "jarvis-${++counter}"
             val queued = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
             if (queued != TextToSpeech.SUCCESS) {
-                onError?.invoke("Text to speech could not start.")
+                onError?.invoke("Text-to-Speech shuru nahi ho paya.")
                 onFinished?.invoke()
             }
         } catch (t: Throwable) {
-            onError?.invoke("Text to speech failed: ${t.message ?: "unknown error"}")
+            onError?.invoke("Text-to-Speech fail ho gaya: ${t.message ?: "unknown error"}")
             onFinished?.invoke()
         }
     }

@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -49,13 +50,25 @@ class ChatViewModel : ViewModel() {
 
     private val engine = ServiceLocator.engine
     private val prefs = ServiceLocator.prefs
+    private val secure = ServiceLocator.secure
 
     val state: StateFlow<JarvisUiState> = engine.state
     val micLevel: StateFlow<Float> = engine.micLevel
     val orbSpec: StateFlow<OrbSpec> = engine.orbSpec
     val continuousMode: StateFlow<Boolean> = prefs.continuousMode
     val selectedModel: StateFlow<String> = prefs.selectedModel
+    val temperature: StateFlow<Float> = prefs.temperature
     val setupState: StateFlow<SetupUiState> = engine.setupState
+
+    val savedSetupsCount: StateFlow<Int> = ServiceLocator.database.setupDao().all()
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    val memoryNotesCount: StateFlow<Int> = ServiceLocator.learning.notes
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    val hasApiKey: Boolean get() = secure.has(SecureStore.KEY_GEMINI)
 
     /** Called when the home screen appears: re-arms the wake word. */
     fun onScreenVisible() = engine.onForeground()
@@ -64,13 +77,31 @@ class ChatViewModel : ViewModel() {
         if (state.value.listening) engine.stopListening() else engine.startListening()
     }
 
+    fun cycleOrbShape() {
+        val shapes = listOf(
+            OrbSpec.SHAPE_SPHERE,
+            OrbSpec.SHAPE_TORUS,
+            OrbSpec.SHAPE_HEART,
+            OrbSpec.SHAPE_CUSTOM,
+        )
+        val current = prefs.orbSpec.value
+        val nextIndex = (shapes.indexOf(current.shape) + 1) % shapes.size
+        val nextShape = shapes[nextIndex]
+        val nextFormula = if (nextShape == OrbSpec.SHAPE_CUSTOM && current.formula.isNullOrBlank()) {
+            OrbSpec.EXAMPLE_FORMULA
+        } else {
+            current.formula
+        }
+        prefs.setOrbSpec(current.copy(shape = nextShape, formula = nextFormula).sanitized())
+    }
+
     fun stopListening() = engine.stopListening()
 
     fun send(text: String) = engine.sendText(text)
 
     fun stopEverything() = engine.emergencyStop()
 
-    fun stopEverythingByVoice() = engine.emergencyStop("Stopped by voice command.")
+    fun stopEverythingByVoice() = engine.emergencyStop("Voice command se band kar diya.")
 
     fun resume() = engine.resume()
 
@@ -132,10 +163,10 @@ class SetupViewModel : ViewModel() {
                 val account: GoogleAccount = auth.signIn(activityContext)
                 prefs.setAccount(account.email, account.displayName ?: account.email, false)
                 audit.info("AUTH", "Google sign-in ok for ${account.email}")
-                signIn = AsyncUi(message = "Signed in as ${account.displayName ?: account.email}")
+                signIn = AsyncUi(message = "${account.displayName ?: account.email} se sign-in ho gaya")
                 onSuccess()
             } catch (t: Throwable) {
-                val message = t.message ?: "Google sign-in failed."
+                val message = t.message ?: "Google sign-in fail ho gaya."
                 audit.warn("AUTH", message)
                 signIn = AsyncUi(error = message)
             }
@@ -143,9 +174,9 @@ class SetupViewModel : ViewModel() {
     }
 
     fun continueInLimitedMode() {
-        prefs.setAccount(null, "Limited mode", true)
-        audit.warn("AUTH", "limited mode: signed in without Google verification")
-        signIn = AsyncUi(message = "Limited mode enabled.")
+        prefs.setAccount(null, "Guest Mode", true)
+        audit.warn("AUTH", "guest mode: continuing without Google sign-in")
+        signIn = AsyncUi(message = "Guest mode active hai.")
     }
 
     fun runIntegrityCheck(onDone: (String) -> Unit = {}) {
@@ -168,7 +199,7 @@ class SetupViewModel : ViewModel() {
     fun testAndSaveKey(rawKey: String, onSuccess: () -> Unit) {
         val key = rawKey.trim()
         if (key.isEmpty()) {
-            keyUi = AsyncUi(error = "Paste your Gemini API key first.")
+            keyUi = AsyncUi(error = "Pehle apni Gemini API key paste karo.")
             return
         }
         if (keyUi.loading) return
@@ -179,8 +210,8 @@ class SetupViewModel : ViewModel() {
                 val models = gemini.listModels(key)
                 if (models.isEmpty()) {
                     keyUi = AsyncUi(
-                        error = "The key works but returned no text models. Check the key's " +
-                            "Generative Language API access."
+                        error = "Key sahi hai par koi text model nahi mila. " +
+                            "Generative Language API access check karo."
                     )
                     return@launch
                 }
@@ -193,16 +224,16 @@ class SetupViewModel : ViewModel() {
                 val stored = secure.put(SecureStore.KEY_GEMINI, key)
                 if (!stored) {
                     keyUi = AsyncUi(
-                        error = "The key works, but this device's secure storage refused to save it."
+                        error = "Key verify ho gayi, par device ke secure storage ne save karne se mana kar diya."
                     )
                     return@launch
                 }
 
                 audit.info("AI", "API key verified and stored; ${ids.size} models found")
-                keyUi = AsyncUi(message = "Key verified. ${ids.size} models available, using $chosen.")
+                keyUi = AsyncUi(message = "Key verify ho gayi! ${ids.size} models mile, active: $chosen.")
                 onSuccess()
             } catch (t: Throwable) {
-                val message = t.message ?: "Could not verify the key."
+                val message = t.message ?: "Key verify nahi ho payi."
                 audit.warn("AI", "API key test failed: $message")
                 keyUi = AsyncUi(error = message)
             }
@@ -212,16 +243,16 @@ class SetupViewModel : ViewModel() {
     fun testStoredKey(onResult: (Boolean, String) -> Unit) {
         val key = secure.get(SecureStore.KEY_GEMINI)
         if (key.isNullOrBlank()) {
-            onResult(false, "No key stored.")
+            onResult(false, "Koi key save nahi hai.")
             return
         }
         viewModelScope.launch {
             try {
                 val models = gemini.listModels(key)
                 prefs.setAvailableModels(models.map { it.id })
-                onResult(true, "Key is valid. ${models.size} models available.")
+                onResult(true, "Key bilkul sahi hai. ${models.size} models available hain.")
             } catch (t: Throwable) {
-                onResult(false, t.message ?: "Key test failed.")
+                onResult(false, t.message ?: "Key test fail ho gaya.")
             }
         }
     }
@@ -230,12 +261,13 @@ class SetupViewModel : ViewModel() {
         secure.remove(SecureStore.KEY_GEMINI)
         prefs.setAvailableModels(emptyList())
         audit.warn("AI", "API key removed by user")
-        keyUi = AsyncUi(message = "Key removed.")
+        keyUi = AsyncUi(message = "API key hata di gayi.")
     }
 
     private fun pickDefaultModel(ids: List<String>, current: String): String {
         if (ids.contains(current)) return current
-        val preferred = ids.firstOrNull { it == "gemini-2.0-flash" }
+        val preferred = ids.firstOrNull { it == "gemini-2.5-flash" }
+            ?: ids.firstOrNull { it == "gemini-2.0-flash" }
         val anyFlash = ids.firstOrNull {
             it.contains("flash") &&
                 !it.contains("thinking") &&
@@ -267,7 +299,7 @@ class ModelsViewModel : ViewModel() {
     fun refresh() {
         val key = secure.get(SecureStore.KEY_GEMINI)
         if (key.isNullOrBlank()) {
-            ui = AsyncUi(error = "Add a Gemini API key first (API Keys).")
+            ui = AsyncUi(error = "Pehle Settings › API Keys me Gemini key add karo.")
             return
         }
         if (ui.loading) return
@@ -277,9 +309,9 @@ class ModelsViewModel : ViewModel() {
                 val list = gemini.listModels(key)
                 prefs.setAvailableModels(list.map { it.id })
                 audit.info("AI", "model list refreshed (${list.size} models)")
-                ui = AsyncUi(message = "${list.size} models found.")
+                ui = AsyncUi(message = "${list.size} models mil gaye.")
             } catch (t: Throwable) {
-                ui = AsyncUi(error = t.message ?: "Could not load models.")
+                ui = AsyncUi(error = t.message ?: "Models load nahi ho paye.")
             }
         }
     }
@@ -287,7 +319,7 @@ class ModelsViewModel : ViewModel() {
     fun select(model: String) {
         prefs.setSelectedModel(model)
         audit.info("MODEL", "user selected $model")
-        ui = AsyncUi(message = "Now using $model.")
+        ui = AsyncUi(message = "Ab $model use ho raha hai.")
     }
 }
 

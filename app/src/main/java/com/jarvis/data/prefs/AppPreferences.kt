@@ -88,7 +88,7 @@ class AppPreferences(context: Context) {
     val ttsPitch: StateFlow<Float> = _ttsPitch.asStateFlow()
 
     private val _replyLanguage = MutableStateFlow(
-        prefs.getString(K_LANGUAGE, Prompts.LANGUAGE_AUTO) ?: Prompts.LANGUAGE_AUTO
+        prefs.getString(K_LANGUAGE, Prompts.LANGUAGE_HINGLISH) ?: Prompts.LANGUAGE_HINGLISH
     )
     val replyLanguage: StateFlow<String> = _replyLanguage.asStateFlow()
 
@@ -250,7 +250,7 @@ class AppPreferences(context: Context) {
         _hotwordOffline.value = true
         _ttsRate.value = 1.0f
         _ttsPitch.value = 1.0f
-        _replyLanguage.value = Prompts.LANGUAGE_AUTO
+        _replyLanguage.value = Prompts.LANGUAGE_HINGLISH
         _orbSpec.value = OrbSpec.DEFAULT
         _developerRawIo.value = false
     }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -58,6 +60,12 @@ fun ApiKeyScreen(
     var key by remember { mutableStateOf("") }
     var reveal by remember { mutableStateOf(false) }
 
+    val submitKey: () -> Unit = {
+        if (key.isNotBlank() && !vm.keyUi.loading) {
+            vm.testAndSaveKey(key) { onDone() }
+        }
+    }
+
     JarvisBackground {
         Column(
             modifier = Modifier
@@ -70,24 +78,26 @@ fun ApiKeyScreen(
             SectionLabel("Step 4 of 4")
             Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = "Connect the AI brain",
+                text = "AI Brain Connect Karo",
                 style = MaterialTheme.typography.headlineMedium,
             )
             Text(
-                text = "Jarvis uses your own Gemini key. It is stored encrypted with the " +
-                    "Android Keystore and only saved after a real test call succeeds.",
+                text = "Jarvis aapki apni Gemini API key use karta hai. Ye Android Keystore me " +
+                    "encrypted store hoti hai aur real test call pass hone ke baad hi save hoti hai.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
             )
             Spacer(modifier = Modifier.height(18.dp))
 
             GlassCard {
-                Text(text = "Gemini API key", color = TextPrimary, fontSize = 15.sp)
+                Text(text = "Gemini API Key", color = TextPrimary, fontSize = 15.sp)
                 Spacer(modifier = Modifier.height(10.dp))
                 OutlinedTextField(
                     value = key,
                     onValueChange = { key = it.trim() },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("api_key_input"),
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
                     placeholder = { Text(text = "AIza…", color = TextMuted) },
@@ -100,11 +110,12 @@ fun ApiKeyScreen(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
                     ),
+                    keyboardActions = KeyboardActions(onDone = { submitKey() }),
                     trailingIcon = {
                         IconButton(onClick = { reveal = !reveal }) {
                             Icon(
                                 imageVector = if (reveal) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = if (reveal) "Hide key" else "Show key",
+                                contentDescription = if (reveal) "Key chupao" else "Key dikhao",
                                 tint = TextMuted,
                             )
                         }
@@ -120,9 +131,11 @@ fun ApiKeyScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
                 NeonButton(
-                    text = if (vm.keyUi.loading) "Testing key…" else "Test key & save",
-                    onClick = { vm.testAndSaveKey(key) { onDone() } },
-                    modifier = Modifier.fillMaxWidth(),
+                    text = if (vm.keyUi.loading) "Key Test Ho Rahi Hai…" else "Key Test & Save Karo",
+                    onClick = submitKey,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("api_key_submit_button"),
                     enabled = key.isNotBlank() && !vm.keyUi.loading,
                 )
 
@@ -146,14 +159,13 @@ fun ApiKeyScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
             GlassCard {
-                SectionLabel("Where to get a key")
+                SectionLabel("Key Kahan Se Milegi")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "1. Open aistudio.google.com/apikey in any browser.\n" +
-                        "2. Create an API key for the same Google account.\n" +
-                        "3. Copy it and paste it above.\n\n" +
-                        "Free-tier keys work. If you hit a quota error, Jarvis will say so " +
-                        "instead of pretending the answer failed.",
+                    text = "1. Kisi bhi browser me aistudio.google.com/apikey kholo.\n" +
+                        "2. Apne Google account se ek API key create karo.\n" +
+                        "3. Copy karke upar box me paste karo.\n\n" +
+                        "Free-tier keys bhi smoothly chalti hain.",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 19.sp,
@@ -162,8 +174,7 @@ fun ApiKeyScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "The key travels in an HTTP header to Google only. It is never written " +
-                    "in plain text, never logged, and masked in every screen.",
+                text = "Key sirf Google ke HTTP header me jaati hai. Ye kabhi plain text me store ya log nahi hoti.",
                 color = TextMuted,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,

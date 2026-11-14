@@ -9,7 +9,6 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -58,8 +58,7 @@ import com.jarvis.ui.theme.TextSecondary
 import com.jarvis.ui.theme.WarningAmber
 
 /**
- * One screen, every permission, plain-English reason, live status.
- * Continue unlocks only when the mandatory ones are actually granted.
+ * Ek screen par har permission ka saaf Hinglish kaaran aur live status.
  */
 @Composable
 fun PermissionsScreen(onContinue: () -> Unit) {
@@ -91,6 +90,24 @@ fun PermissionsScreen(onContinue: () -> Unit) {
     val accessibilityOn = remember(refresh) { isAccessibilityEnabled(context) }
     val mandatoryOk = micGranted && notificationsGranted
 
+    val finishPermissions: () -> Unit = {
+        ServiceLocator.prefs.setPermissionsDone(true)
+        ServiceLocator.audit.info("SETUP", "permissions step completed (mandatoryOk=$mandatoryOk)")
+        onContinue()
+    }
+
+    val askAllRequired: () -> Unit = {
+        val toRequest = buildList {
+            if (!micGranted) add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= 33 && !notificationsGranted) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        if (toRequest.isNotEmpty()) {
+            requestPermissions.launch(toRequest.toTypedArray())
+        }
+    }
+
     JarvisBackground {
         Column(
             modifier = Modifier
@@ -107,8 +124,7 @@ fun PermissionsScreen(onContinue: () -> Unit) {
                 style = MaterialTheme.typography.headlineMedium,
             )
             Text(
-                text = "Nothing is requested silently. Each line says what it is for and " +
-                    "shows its real state.",
+                text = "Koi bhi permission chupke se nahi li jaati. Har ek ka kaaran aur real status neeche hai.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
             )
@@ -116,48 +132,39 @@ fun PermissionsScreen(onContinue: () -> Unit) {
 
             // ---- mandatory
             GlassCard {
-                SectionLabel("Required")
+                SectionLabel("Zaroori Permissions")
                 PermissionRow(
                     title = "Microphone",
-                    reason = "So you can talk to Jarvis and use the \"Jarvis\" wake word. " +
-                        "Audio is handled by the system speech service.",
+                    reason = "Jarvis se bolkar baat karne aur \"Jarvis\" wake word sunne ke liye.",
                     granted = micGranted,
                     mandatory = true,
-                    onRequest = {
-                        requestPermissions.launch(
-                            arrayOf(
-                                Manifest.permission.RECORD_AUDIO,
-                                Manifest.permission.POST_NOTIFICATIONS,
-                            )
-                        )
-                    },
+                    onRequest = askAllRequired,
                 )
                 PermissionRow(
                     title = "Notifications",
-                    reason = "For the persistent ON/OFF + Emergency Stop control and for " +
-                        "error alerts. Nothing promotional is ever posted.",
+                    reason = "Emergency Stop alerts aur status updates dikhane ke liye.",
                     granted = notificationsGranted,
                     mandatory = true,
                     onRequest = {
-                        requestPermissions.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                        if (Build.VERSION.SDK_INT >= 33) {
+                            requestPermissions.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                        }
                     },
                 )
                 PermissionRow(
                     title = "Internet",
-                    reason = "Only to reach the AI provider you configured. Uploads are " +
-                        "redacted first.",
+                    reason = "Sirf Gemini AI se baat karne ke liye. Data bhejne se pehle redact hota hai.",
                     granted = true,
                     mandatory = false,
-                    statusOverride = "Granted automatically",
+                    statusOverride = "Auto Granted",
                     onRequest = {},
                 )
                 PermissionRow(
-                    title = "Foreground service",
-                    reason = "Lets the wake word keep running with a visible notification " +
-                        "(Phase 2). Android grants this automatically at install.",
+                    title = "Foreground Service",
+                    reason = "Future background voice listener ke liye (Phase 2).",
                     granted = true,
                     mandatory = false,
-                    statusOverride = "Granted automatically",
+                    statusOverride = "Auto Granted",
                     onRequest = {},
                 )
             }
@@ -166,11 +173,10 @@ fun PermissionsScreen(onContinue: () -> Unit) {
 
             // ---- optional
             GlassCard {
-                SectionLabel("Optional")
+                SectionLabel("Optional Permissions")
                 PermissionRow(
                     title = "Display over other apps",
-                    reason = "The draggable floating Jarvis button (Phase 2). Not needed " +
-                        "for anything in Phase 1.",
+                    reason = "Floating Jarvis button ke liye (Phase 2). Abhi ke liye zaroori nahi.",
                     granted = overlayGranted,
                     mandatory = false,
                     onRequest = {
@@ -182,59 +188,69 @@ fun PermissionsScreen(onContinue: () -> Unit) {
                     },
                 )
                 PermissionRow(
-                    title = "Accessibility service",
-                    reason = "Phone control (Phase 3). It will never read password fields " +
-                        "and never reads banking, OTP or SMS apps.",
+                    title = "Accessibility Service",
+                    reason = "Future phone control ke liye (Phase 3). Password/OTP/Bank apps ko kabhi touch nahi karega.",
                     granted = accessibilityOn,
                     mandatory = false,
-                    statusOverride = if (accessibilityOn) null else "Available in Phase 3",
+                    statusOverride = if (accessibilityOn) null else "Phase 3 me aayega",
                     onRequest = { showAccessibilityHelp = true },
                 )
                 PermissionRow(
-                    title = "App storage",
-                    reason = "The terminal and coding agent work inside the app's own folder, " +
-                        "so no storage permission is needed at all.",
+                    title = "App Storage",
+                    reason = "Terminal aur files app ke private folder me chalti hain — extra storage permission ki zaroorat nahi.",
                     granted = true,
                     mandatory = false,
-                    statusOverride = "No permission needed",
+                    statusOverride = "Zaroorat nahi",
                     onRequest = {},
                 )
             }
 
             Spacer(modifier = Modifier.height(14.dp))
             Text(
-                text = "Jarvis never asks for SMS, call log or contacts access in Phase 1. " +
-                    "If a future phase needs more, it will explain why here first.",
+                text = "Jarvis kabhi bhi SMS, call log ya contacts ki permission nahi mangta.",
                 color = TextMuted,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,
             )
 
             Spacer(modifier = Modifier.height(20.dp))
-            NeonButton(
-                text = if (mandatoryOk) "Continue" else "Grant the required permissions",
-                onClick = {
-                    ServiceLocator.prefs.setPermissionsDone(true)
-                    ServiceLocator.audit.info("SETUP", "permissions step completed")
-                    onContinue()
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = mandatoryOk,
-            )
+            if (mandatoryOk) {
+                NeonButton(
+                    text = "Aage Badho",
+                    onClick = finishPermissions,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("permissions_continue_button"),
+                )
+            } else {
+                NeonButton(
+                    text = "Zaroori Permissions Allow Karein",
+                    onClick = askAllRequired,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("permissions_allow_button"),
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                GhostButton(
+                    text = "Abhi Skip Karein (Baad me allow kar sakte hain)",
+                    onClick = finishPermissions,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("permissions_skip_button"),
+                )
+            }
             Spacer(modifier = Modifier.height(24.dp))
         }
 
         if (showAccessibilityHelp) {
             AlertDialog(
                 onDismissRequest = { showAccessibilityHelp = false },
-                title = { Text(text = "About accessibility") },
+                title = { Text(text = "Accessibility ke baare me") },
                 text = {
                     Text(
-                        text = "The Jarvis accessibility service is added in Phase 3. " +
-                            "Opening Android settings now shows where it will appear — " +
-                            "nothing will be enabled yet.\n\n" +
-                            "When it ships it will skip password fields (isPassword = true) " +
-                            "and skip banking, OTP and SMS apps completely.",
+                        text = "Jarvis accessibility service Phase 3 me aayegi. " +
+                            "Android settings kholne par abhi list dikhegi — kuch enable nahi hoga.\n\n" +
+                            "Ye hamesha password fields aur banking/OTP/SMS apps ko skip karega.",
                         fontSize = 13.sp,
                         lineHeight = 19.sp,
                     )
@@ -245,10 +261,10 @@ fun PermissionsScreen(onContinue: () -> Unit) {
                         runCatching {
                             context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         }
-                    }) { Text("Open settings") }
+                    }) { Text("Settings Kholo") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showAccessibilityHelp = false }) { Text("Close") }
+                    TextButton(onClick = { showAccessibilityHelp = false }) { Text("Band Karo") }
                 },
             )
         }
@@ -274,7 +290,7 @@ private fun PermissionRow(
                 modifier = Modifier.weight(1f),
             )
             StatusChip(
-                text = statusOverride ?: if (granted) "Granted" else "Not granted",
+                text = statusOverride ?: if (granted) "Allowed" else "Allow karein",
                 color = when {
                     statusOverride != null -> TextMuted
                     granted -> SuccessGreen
@@ -295,7 +311,7 @@ private fun PermissionRow(
             Spacer(modifier = Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 GhostButton(
-                    text = if (mandatory) "Allow" else "Open settings",
+                    text = if (mandatory) "Allow Karo" else "Settings Kholo",
                     onClick = onRequest,
                     accent = accent,
                 )
@@ -303,7 +319,7 @@ private fun PermissionRow(
         }
         if (granted && !mandatory && statusOverride == null) {
             Spacer(modifier = Modifier.height(8.dp))
-            GhostButton(text = "Change in settings", onClick = onRequest, accent = TextMuted)
+            GhostButton(text = "Settings me Badlo", onClick = onRequest, accent = TextMuted)
         }
     }
 }

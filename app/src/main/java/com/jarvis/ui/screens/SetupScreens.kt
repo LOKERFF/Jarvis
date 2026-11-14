@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,12 +75,12 @@ fun SplashScreen(onReady: (StartDestination) -> Unit) {
         ),
         label = "splash-pulse",
     )
-    var status by remember { mutableStateOf("Waking up the core…") }
+    var status by remember { mutableStateOf("Core start ho raha hai…") }
 
     LaunchedEffect(Unit) {
-        delay(600)
-        status = "Checking the encrypted key vault…"
-        delay(600)
+        delay(500)
+        status = "Encrypted key vault check ho raha hai…"
+        delay(500)
         onReady(ServiceLocator.startDestination())
     }
 
@@ -134,6 +135,7 @@ fun SplashScreen(onReady: (StartDestination) -> Unit) {
 @Composable
 fun SignInScreen(
     onSignedIn: () -> Unit,
+    onContinueGuest: () -> Unit = onSignedIn,
     vm: SetupViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -156,23 +158,23 @@ fun SignInScreen(
                 color = accent,
             )
             Text(
-                text = "A personal assistant that stays on your phone.",
+                text = "Aapka personal AI assistant, seedha aapke phone par.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
             )
             Spacer(modifier = Modifier.height(24.dp))
 
             GlassCard {
-                SectionLabel("Step 1 of 4")
+                SectionLabel("Step 1 of 4 · Optional Sign-In")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Verify it's you",
+                    text = "Account Setup",
                     style = MaterialTheme.typography.headlineMedium,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Google sign-in is required before Jarvis can store anything. " +
-                        "The app keeps your email on this device only; it is never uploaded.",
+                    text = "Google Sign-In bilkul optional hai. Aap chahein to Google se sign-in karein " +
+                        "ya bina login ke seedha Guest Mode me Jarvis use karein.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
 
@@ -182,15 +184,13 @@ fun SignInScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(MaterialTheme.shapes.medium)
-                            .background(WarningAmber.copy(alpha = 0.14f))
+                            .background(accent.copy(alpha = 0.12f))
                             .padding(14.dp)
                     ) {
                         Text(
-                            text = "This build has no Google OAuth client id yet. Add " +
-                                "jarvisGoogleWebClientId to gradle.properties (see README), or " +
-                                "continue in limited mode. Limited mode is clearly marked " +
-                                "everywhere and is not real verification.",
-                            color = WarningAmber,
+                            text = "Is build me Google OAuth client ID configure nahi hai, isliye aap " +
+                                "seedha Guest Mode me sabhi features smoothly use kar sakte hain.",
+                            color = TextSecondary,
                             fontSize = 12.sp,
                             lineHeight = 17.sp,
                         )
@@ -198,12 +198,41 @@ fun SignInScreen(
                 }
 
                 Spacer(modifier = Modifier.height(18.dp))
-                NeonButton(
-                    text = if (vm.signIn.loading) "Opening Google…" else "Sign in with Google",
-                    onClick = { vm.signInWithGoogle(context) { onSignedIn() } },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = configured && !vm.signIn.loading,
-                )
+                if (configured) {
+                    NeonButton(
+                        text = if (vm.signIn.loading) "Google khul raha hai…" else "Google se Sign In karo",
+                        onClick = { vm.signInWithGoogle(context) { onSignedIn() } },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("google_signin_button"),
+                        enabled = !vm.signIn.loading,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    GhostButton(
+                        text = "Guest Mode me aage badho",
+                        onClick = {
+                            vm.continueInLimitedMode()
+                            onContinueGuest()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("guest_mode_button"),
+                        enabled = !vm.signIn.loading,
+                        accent = accent,
+                    )
+                } else {
+                    NeonButton(
+                        text = "Guest Mode me aage badho",
+                        onClick = {
+                            vm.continueInLimitedMode()
+                            onContinueGuest()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("guest_mode_button"),
+                        accent = accent,
+                    )
+                }
 
                 if (vm.signIn.loading) {
                     Spacer(modifier = Modifier.height(14.dp))
@@ -218,41 +247,18 @@ fun SignInScreen(
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    GhostButton(
-                        text = "Continue in limited mode",
-                        onClick = {
-                            vm.continueInLimitedMode()
-                            onSignedIn()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        accent = WarningAmber,
-                    )
-                }
-
-                if (!configured && !vm.signIn.loading && vm.signIn.error == null) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    GhostButton(
-                        text = "Continue in limited mode",
-                        onClick = {
-                            vm.continueInLimitedMode()
-                            onSignedIn()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        accent = WarningAmber,
-                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
             GlassCard {
-                SectionLabel("Privacy first")
+                SectionLabel("Privacy First")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "• No SMS, OTP or call-log permissions. Ever.\n" +
-                        "• Passwords and OTP fields are never read.\n" +
-                        "• Everything sent to an AI provider is redacted first.\n" +
-                        "• The API key is sealed with the Android Keystore.",
+                    text = "• Kabhi bhi SMS, OTP ya call-log permission nahi mangi jaati.\n" +
+                        "• Passwords aur OTP fields kabhi padhe nahi jaate.\n" +
+                        "• AI ko bhejne se pehle sensitive details redact hoti hain.\n" +
+                        "• Aapki Gemini API key Android Keystore me encrypted rehti hai.",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 20.sp,
@@ -293,12 +299,11 @@ fun IntegrityScreen(
             SectionLabel("Step 2 of 4")
             Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = "Integrity check",
+                text = "Integrity Check",
                 style = MaterialTheme.typography.headlineMedium,
             )
             Text(
-                text = "Play Integrity tells us whether this install is genuine and " +
-                    "untampered.",
+                text = "Play Integrity check karta hai ki app install genuine hai ya local.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
             )
@@ -307,17 +312,17 @@ fun IntegrityScreen(
             GlassCard {
                 val (label, color) = when (status) {
                     AppPreferences.STATUS_VERIFIED -> "VERIFIED" to SuccessGreen
-                    AppPreferences.STATUS_LIMITED -> "NOT VERIFIED · LIMITED MODE" to WarningAmber
-                    AppPreferences.STATUS_ERROR -> "COULD NOT CHECK" to DangerRed
-                    else -> "CHECKING…" to TextMuted
+                    AppPreferences.STATUS_LIMITED -> "LOCAL / GUEST MODE" to WarningAmber
+                    AppPreferences.STATUS_ERROR -> "CHECK NAHI HO PAYA" to DangerRed
+                    else -> "CHECK CHAL RAHA HAI…" to TextMuted
                 }
                 StatusChip(text = label, color = color, filled = true)
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = if (vm.integrityUi.loading) {
-                        "Talking to Google Play services…"
+                        "Google Play services se connect ho raha hai…"
                     } else {
-                        detail.ifBlank { "No result yet." }
+                        detail.ifBlank { "Abhi koi result nahi aaya." }
                     },
                     color = TextSecondary,
                     fontSize = 13.sp,
@@ -325,24 +330,24 @@ fun IntegrityScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Honest note: the integrity verdict is encrypted and can only be " +
-                        "read by a server. A sideloaded APK will normally show limited mode. " +
-                        "Jarvis never claims to be verified without a token.",
+                    text = "Note: Direct sideloaded APKs me limited status dikhna normal hai. " +
+                        "Aap bina ruke aage badh sakte hain.",
                     color = TextMuted,
                     fontSize = 11.sp,
                     lineHeight = 16.sp,
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 NeonButton(
-                    text = if (vm.integrityUi.loading) "Checking…" else "Continue",
+                    text = if (vm.integrityUi.loading) "Skip karke Aage Badho" else "Aage Badho",
                     onClick = onContinue,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !vm.integrityUi.loading,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("integrity_continue_button"),
                     accent = accent,
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 GhostButton(
-                    text = "Run the check again",
+                    text = "Dobara Check Karo",
                     onClick = { vm.runIntegrityCheck() },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !vm.integrityUi.loading,
@@ -351,8 +356,7 @@ fun IntegrityScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "You can also continue without a verdict. The status appears on the " +
-                    "home screen so it is never hidden.",
+                text = "Integrity status Settings › Security me bhi kabhi bhi dekh sakte hain.",
                 color = TextMuted,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,

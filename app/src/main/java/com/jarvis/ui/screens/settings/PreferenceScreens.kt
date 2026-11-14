@@ -64,23 +64,20 @@ fun GeneralScreen(onBack: () -> Unit, onRestartSetup: () -> Unit) {
 
     SettingsPage(
         title = "General",
-        subtitle = "How Jarvis starts and behaves",
+        subtitle = "Jarvis ka startup aur behaviour",
         onBack = onBack,
     ) {
         GlassCard {
             CardTitle("Conversation")
             ToggleRow(
                 title = "Continuous conversation",
-                description = "When a reply finishes, the microphone opens again automatically " +
-                    "so you can keep talking without tapping.",
+                description = "Jawab khatam hone ke baad mic apne aap phir khul jayega.",
                 checked = continuous,
                 onCheckedChange = { prefs.setContinuousMode(it) },
             )
             ToggleRow(
                 title = "Wake word \"Jarvis\"",
-                description = "Phase 1 uses the system speech recogniser in short bursts. " +
-                    "It only runs while this screen is open; the offline Vosk engine arrives " +
-                    "with the foreground service in Phase 2.",
+                description = "Screen khuli hone par \"Jarvis\" bolkar seedha mic start karein.",
                 checked = hotword,
                 onCheckedChange = { prefs.setHotwordEnabled(it) },
             )
@@ -91,17 +88,17 @@ fun GeneralScreen(onBack: () -> Unit, onRestartSetup: () -> Unit) {
             Spacer(modifier = Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = email ?: "Not signed in",
+                    text = email ?: "Guest Mode",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     modifier = Modifier.weight(1f),
                 )
                 if (limited) {
-                    StatusChip(text = "LIMITED MODE", color = com.jarvis.ui.theme.WarningAmber, filled = true)
+                    StatusChip(text = "GUEST MODE", color = com.jarvis.ui.theme.WarningAmber, filled = true)
                 }
             }
             Spacer(modifier = Modifier.height(6.dp))
-            SettingsHint("Current model: $model")
+            SettingsHint("Active model: $model")
         }
 
         GlassCard {
@@ -623,11 +620,11 @@ fun LanguageScreen(onBack: () -> Unit) {
             }
         }
         GlassCard {
-            CardTitle("App interface")
+            CardTitle("App Interface")
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "The app's own labels are English-only in Phase 1. Translating the " +
-                    "interface is part of the Language work in a later phase.",
+                text = "App ke main screens, onboarding, alerts aur voice responses Hinglish me " +
+                    "set kiye gaye hain. Aap upar se AI reply aur voice language kabhi bhi badal sakte hain.",
                 color = TextSecondary,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,

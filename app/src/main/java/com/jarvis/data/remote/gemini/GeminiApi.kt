@@ -39,7 +39,7 @@ class GeminiApi(
             ?.newBuilder()
             ?.addQueryParameter("pageSize", "200")
             ?.build()
-            ?: throw GeminiException("Internal error: bad base URL.")
+            ?: throw GeminiException("Internal error: base URL galat hai.")
         val request = Request.Builder()
             .url(url)
             .header("x-goog-api-key", apiKey)
@@ -51,7 +51,7 @@ class GeminiApi(
             val parsed = try {
                 json.decodeFromString<ModelListResponse>(raw)
             } catch (t: Throwable) {
-                throw GeminiException("Gemini sent a reply this app could not read.")
+                throw GeminiException("Gemini ka reply samajh nahi aaya.")
             }
             parsed.models
                 .filter { it.supportsGenerate }
@@ -69,8 +69,8 @@ class GeminiApi(
         temperature: Double,
     ): GenerateContentResponse = withContext(Dispatchers.IO) {
         val cleanModel = model.removePrefix("models/").ifBlank { "gemini-2.0-flash" }
-        val url = "$BASE/$cleanModel:generateContent".toHttpUrlOrNull()
-            ?: throw GeminiException("Internal error: bad model name \"$cleanModel\".")
+        val url = "$BASE/models/$cleanModel:generateContent".toHttpUrlOrNull()
+            ?: throw GeminiException("Internal error: model naam \"$cleanModel\" galat hai.")
 
         val payload = GenerateContentRequest(
             contents = contents,
@@ -85,7 +85,7 @@ class GeminiApi(
         val body = try {
             json.encodeToString(GenerateContentRequest.serializer(), payload)
         } catch (t: Throwable) {
-            throw GeminiException("Could not build the request. Try a shorter message.")
+            throw GeminiException("Request ban nahi payi. Chhota message try karo.")
         }
 
         val request = Request.Builder()
@@ -99,7 +99,7 @@ class GeminiApi(
             try {
                 json.decodeFromString<GenerateContentResponse>(raw)
             } catch (t: Throwable) {
-                throw GeminiException("Gemini sent a reply this app could not read.")
+                throw GeminiException("Gemini ka reply samajh nahi aaya.")
             }
         }
     }
@@ -115,15 +115,15 @@ class GeminiApi(
         } catch (e: GeminiException) {
             throw e
         } catch (e: java.net.UnknownHostException) {
-            throw GeminiException("No internet connection. Check Wi-Fi or mobile data.")
+            throw GeminiException("Internet connection nahi hai. Wi-Fi ya mobile data check karo.")
         } catch (e: java.net.SocketTimeoutException) {
-            throw GeminiException("Gemini took too long to answer. Try again.")
+            throw GeminiException("Gemini ne jawab dene me zyada time le liya. Dobara try karo.")
         } catch (e: javax.net.ssl.SSLException) {
-            throw GeminiException("Secure connection to Google failed. Check the device clock and network.")
+            throw GeminiException("Google se secure connection nahi ban paya. Phone ka date/time aur network check karo.")
         } catch (e: java.io.IOException) {
-            throw GeminiException("Network error: ${e.message ?: "connection lost"}.")
+            throw GeminiException("Network error: ${e.message ?: "connection toot gaya"}.")
         } catch (t: Throwable) {
-            throw GeminiException("Unexpected error: ${t.message ?: t.javaClass.simpleName}.")
+            throw GeminiException("Kuch unexpected error aaya: ${t.message ?: t.javaClass.simpleName}.")
         }
     }
 
@@ -135,16 +135,16 @@ class GeminiApi(
         }
         val hint = when {
             code == 400 && googleMessage.contains("API key", ignoreCase = true) ->
-                "The API key was rejected. Check it in Settings › API Keys."
-            code == 400 -> "Gemini refused the request (400)."
+                "API key reject ho gayi. Settings › API Keys me check karo."
+            code == 400 -> "Gemini ne request accept nahi ki (400)."
             code == 401 || code == 403 ->
-                "This key is not allowed to use that model."
+                "Is key ko ye model use karne ki permission nahi hai."
             code == 404 ->
-                "Model not found. Pick another one in Settings › AI Models."
+                "Model nahi mila. Settings › AI Models me doosra model chuno."
             code == 429 ->
-                "Quota or rate limit reached. Wait a minute, then try again."
+                "Quota ya rate limit full ho gayi hai. Ek minute ruk kar try karo."
             code == 500 || code == 503 ->
-                "Gemini is overloaded right now. Try again in a moment."
+                "Gemini abhi busy hai. Thodi der baad dobara try karo."
             else -> "Gemini error $code."
         }
         return if (googleMessage.isBlank()) hint else "$hint (Google: ${googleMessage.take(160)})"
