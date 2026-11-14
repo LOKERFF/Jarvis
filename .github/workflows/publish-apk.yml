@@ -1,10 +1,15 @@
 name: Publish APK Release
 
 # Release-only workflow.
-# The APK is compiled OUTSIDE GitHub Actions (Android Studio / AI Studio builder
-# or any machine with JDK 17 + Android SDK 35) and committed to
-# apk-distribution/app-debug.apk together with its .sha256 file.
+# The APK is compiled OUTSIDE GitHub Actions (Android Studio / any machine with
+# JDK 17 + Android SDK 35) and committed to apk-distribution/app-debug.apk
+# together with its .sha256 file.
 # This workflow never installs an SDK, never runs Gradle and never builds the app.
+#
+# State handling:
+#   * APK not committed yet      -> green run, clear notice, NOTHING published
+#   * APK empty / checksum bad / corrupt archive -> red run, NOTHING published
+#   * APK valid                  -> GitHub Release (tag debug-apk-build-<run>-<attempt>)
 
 on:
   push:
@@ -14,7 +19,6 @@ on:
     paths:
       - 'apk-distribution/app-debug.apk'
       # So that pushing an updated workflow itself proves it is wired up.
-      # It still publishes nothing until a valid APK is committed (strict check).
       - '.github/workflows/publish-apk.yml'
   workflow_dispatch:
 
@@ -38,15 +42,42 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Validate APK and checksum
+      - name: Check whether an APK is committed
         run: |
           set -euo pipefail
 
           echo "Checking $APK_PATH"
           if [ ! -f "$APK_PATH" ]; then
-            echo "::error::APK not found at $APK_PATH"
-            exit 1
+            echo "::notice title=Nothing to publish::$APK_PATH is not committed yet. Build the APK, commit it with its .sha256 file, then push again. No release was created."
+            echo "SKIP_PUBLISH=true" >> "$GITHUB_ENV"
+            {
+              echo "## Nothing to publish yet"
+              echo ""
+              echo "\`$APK_PATH\` is not in the repository, so there is no APK to release."
+              echo ""
+              echo "**No release was created and nothing was published.**"
+              echo ""
+              echo "To publish:"
+              echo ""
+              echo '```bash'
+              echo "./gradlew clean assembleDebug"
+              echo "cp app/build/outputs/apk/debug/app-debug.apk apk-distribution/app-debug.apk"
+              echo "cd apk-distribution && sha256sum app-debug.apk > app-debug.apk.sha256"
+              echo '```'
+              echo ""
+              echo "Commit both files and push to \`main\`; this workflow then validates and publishes them."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+
+          echo "SKIP_PUBLISH=false" >> "$GITHUB_ENV"
+          echo "APK file found"
+
+      - name: Validate APK and checksum
+        if: env.SKIP_PUBLISH != 'true'
+        run: |
+          set -euo pipefail
+
           if [ ! -s "$APK_PATH" ]; then
             echo "::error::$APK_PATH exists but is empty"
             exit 1
@@ -82,6 +113,7 @@ jobs:
           echo "Validated: $SIZE bytes, sha256 $ACTUAL"
 
       - name: Create GitHub Release with the APK
+        if: env.SKIP_PUBLISH != 'true'
         run: |
           set -euo pipefail
 
@@ -102,6 +134,7 @@ jobs:
           echo "Published release $TAG"
 
       - name: Job summary
+        if: env.SKIP_PUBLISH != 'true'
         run: |
           set -euo pipefail
           SIZE_MB="$(awk -v b="$APK_SIZE" 'BEGIN { printf "%.2f", b / 1048576 }')"
