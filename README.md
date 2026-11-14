@@ -286,7 +286,8 @@ is additive (new tables, new screens, new tools).
    chat. Jarvis asks one short question, then stores the mistake + correct
    behaviour **AES-256-GCM encrypted** (Keystore key `jarvis_learning_key_v1`).
    Notes are permanent and are injected into every future prompt and every setup
-   plan. Settings › Memory supports search-by-eye list, edit and delete.
+   plan. Settings › Memory has a live search field (mistake, correct behaviour or
+   note #id), plus edit and delete.
    Confirmation: *"Yaad rakh liya, aage se ye nahi karunga."*
 4. **Chat artifacts** — `create_file` writes a real file (`txt.txt`,
    `index.html`, …) into `files/artifacts`, registers it in Room and shows a card
@@ -360,8 +361,8 @@ are untouched.
    verification, live output streams, dangerous steps ask "Haan, chalao".
 4. Settings › Saved Setups shows the job with every step, output and exit code.
 5. Type "ye galat hai" → answer the question → read "Yaad rakh liya, aage se ye
-   nahi karunga." → Settings › Memory shows the encrypted note → edit it, then
-   delete a second one.
+   nahi karunga." → Settings › Memory shows the encrypted note → search it,
+   edit it, then delete a second one.
 6. Force-stop the app, reopen: Saved Setups and Memory are still there, and a new
    question shows the correction is applied (ask the same thing again).
 7. Ask "index.html banao jisme hello likha ho" → card appears in chat → Kholo /

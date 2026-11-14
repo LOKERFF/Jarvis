@@ -387,8 +387,31 @@ class MemoryViewModel : ViewModel() {
 
     private val repo: LearningRepository = ServiceLocator.learning
 
-    val notes: StateFlow<List<LearningRepository.Note>> = repo.notes
+    private val query = MutableStateFlow("")
+
+    /** Unfiltered list, used for the honest total count in the header. */
+    val allNotes: StateFlow<List<LearningRepository.Note>> = repo.notes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val searchQuery: StateFlow<String> = query
+
+    /** Search across the mistake AND the correct behaviour (decrypted in memory). */
+    val notes: StateFlow<List<LearningRepository.Note>> = combine(allNotes, query) { list, text ->
+        val needle = text.trim().lowercase()
+        if (needle.isEmpty()) {
+            list
+        } else {
+            list.filter { note ->
+                note.mistake.lowercase().contains(needle) ||
+                    note.correct.lowercase().contains(needle) ||
+                    note.id.toString() == needle
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun setQuery(value: String) {
+        query.value = value
+    }
 
     var ui by mutableStateOf(AsyncUi())
         private set
