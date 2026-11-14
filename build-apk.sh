@@ -11,15 +11,23 @@ say() { printf '%s\n' "$*"; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 command -v java >/dev/null 2>&1 || fail "java (JDK 17) nahi mila. Android Studio ka bundled JDK ya koi bhi JDK 17 install karo."
-[ -x ./gradlew ] || fail "./gradlew missing ya executable nahi hai."
+
+# This repo currently ships no gradlew script, so accept a system Gradle too.
+if [ -x ./gradlew ]; then
+  GRADLE_CMD=./gradlew
+elif command -v gradle >/dev/null 2>&1; then
+  GRADLE_CMD=gradle
+else
+  fail "./gradlew nahi hai aur 'gradle' bhi install nahi hai. Gradle 8.9 install karo, ya Android Studio me project khol kar Sync chalayein (wo wrapper bana dega)."
+fi
 
 if [ -z "${ANDROID_HOME:-}" ] && [ -z "${ANDROID_SDK_ROOT:-}" ] && [ ! -f local.properties ]; then
   say "warning: ANDROID_HOME / ANDROID_SDK_ROOT / local.properties me se koi nahi mila."
   say "         Gradle ko Android SDK chahiye, warna build fail hoga."
 fi
 
-say "==> Building debug APK (./gradlew clean assembleDebug)"
-./gradlew clean assembleDebug
+say "==> Building debug APK ($GRADLE_CMD clean assembleDebug)"
+"$GRADLE_CMD" clean assembleDebug
 
 SRC=app/build/outputs/apk/debug/app-debug.apk
 [ -s "$SRC" ] || fail "Build ke baad $SRC nahi mila. Build output check karo."
