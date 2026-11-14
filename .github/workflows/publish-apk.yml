@@ -13,6 +13,9 @@ on:
       - master
     paths:
       - 'apk-distribution/app-debug.apk'
+      # So that pushing an updated workflow itself proves it is wired up.
+      # It still publishes nothing until a valid APK is committed (strict check).
+      - '.github/workflows/publish-apk.yml'
   workflow_dispatch:
 
 permissions:
